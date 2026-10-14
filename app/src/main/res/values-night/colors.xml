@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark palette: same hues, lighter tones for contrast on dark surfaces -->
+    <color name="navy_primary">#FFA6C8FF</color>
+    <color name="navy_on_primary">#FF00315C</color>
+    <color name="navy_primary_container">#FF164678</color>
+    <color name="navy_on_primary_container">#FFD3E4FF</color>
+
+    <color name="teal_secondary">#FF4DD9C4</color>
+    <color name="teal_on_secondary">#FF00382F</color>
+    <color name="teal_secondary_container">#FF005045</color>
+    <color name="teal_on_secondary_container">#FFB2F0E4</color>
+
+    <color name="surface_base">#FF101418</color>
+    <color name="on_surface_base">#FFE1E2E8</color>
+    <color name="error_base">#FFFFB4AB</color>
+</resources>

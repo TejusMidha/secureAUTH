@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the cache/qr folder can be shared through FileProvider, nothing else in app storage -->
+<paths>
+    <cache-path
+        name="qr"
+        path="qr/" />
+</paths>

@@ -1,0 +1,41 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme: Material 3 DayNight. Colors switch automatically
+         because values-night/colors.xml redefines the same color names. -->
+    <style name="Base.Theme.SecureAuthSimulator" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/navy_primary</item>
+        <item name="colorOnPrimary">@color/navy_on_primary</item>
+        <item name="colorPrimaryContainer">@color/navy_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/navy_on_primary_container</item>
+        <item name="colorSecondary">@color/teal_secondary</item>
+        <item name="colorOnSecondary">@color/teal_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/teal_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/teal_on_secondary_container</item>
+        <item name="colorSurface">@color/surface_base</item>
+        <item name="colorOnSurface">@color/on_surface_base</item>
+        <item name="android:colorBackground">@color/surface_base</item>
+        <item name="colorOnBackground">@color/on_surface_base</item>
+        <item name="colorError">@color/error_base</item>
+    </style>
+
+    <style name="Theme.SecureAuthSimulator" parent="Base.Theme.SecureAuthSimulator" />
+
+    <!-- Consistent text appearances used by every screen -->
+    <style name="TextAppearance.SecureAuth.Display" parent="TextAppearance.Material3.DisplaySmall">
+        <item name="android:textColor">?attr/colorPrimary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.SecureAuth.Headline" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="TextAppearance.SecureAuth.Body" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!-- Monospace style reserved for OTP codes and secrets -->
+    <style name="TextAppearance.SecureAuth.Code" parent="TextAppearance.Material3.DisplayMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">?attr/colorSecondary</item>
+    </style>
+</resources>

@@ -1,0 +1,200 @@
+<resources>
+    <string name="app_name">SecureAuth Simulator</string>
+
+    <!-- Splash -->
+    <string name="splash_logo">SecureAuth</string>
+    <string name="splash_tagline">Multi-factor authentication with a hand-built TOTP engine</string>
+    <string name="get_started">Get started</string>
+
+    <!-- Shared form fields -->
+    <string name="hint_username">Username</string>
+    <string name="hint_password">Password</string>
+    <string name="hint_confirm_password">Confirm password</string>
+    <string name="please_wait">Please wait…</string>
+
+    <!-- Login -->
+    <string name="login_title">Welcome back</string>
+    <string name="login_subtitle">Log in to continue</string>
+    <string name="button_login">Log in</string>
+    <string name="link_create_account">Create account</string>
+    <string name="error_username_required">Enter your username</string>
+    <string name="error_password_required">Enter your password</string>
+    <string name="login_failed">Invalid username or password</string>
+    <string name="lock_title">Account locked</string>
+    <string name="lock_message">Too many failed attempts. Try again in %1$s.</string>
+    <string name="button_ok">OK</string>
+
+    <!-- Register -->
+    <string name="register_title">Create account</string>
+    <string name="register_subtitle">Choose a username and a strong password</string>
+    <string name="helper_username">3–20 characters</string>
+    <string name="checkbox_trust_device">Trust this device</string>
+    <string name="button_register">Register</string>
+    <string name="link_have_account">I already have an account</string>
+    <string name="error_username_length">Username must be 3–20 characters</string>
+    <string name="error_username_taken">That username is already taken</string>
+    <string name="error_password_short">Use at least 8 characters</string>
+    <string name="error_confirm_mismatch">Passwords do not match</string>
+    <string name="strength_weak">Password strength: weak</string>
+    <string name="strength_fair">Password strength: fair</string>
+    <string name="strength_strong">Password strength: strong</string>
+    <string name="register_success">Account created. Please log in.</string>
+
+    <!-- Enroll -->
+    <string name="enroll_title">Set up your authenticator</string>
+    <string name="enroll_instructions">Scan this QR code with Google Authenticator or any TOTP app, or type the secret key below by hand.</string>
+    <string name="cd_qr_code">QR code containing your authenticator secret</string>
+    <string name="enroll_secret_label">Secret key</string>
+    <string name="button_copy">Copy</string>
+    <string name="secret_copied">Secret copied</string>
+    <string name="button_scanned">I\'ve scanned it</string>
+    <string name="enroll_confirm_prompt">Enter the 6-digit code your authenticator app shows right now.</string>
+    <string name="hint_code">6-digit code</string>
+    <string name="button_confirm">Confirm</string>
+    <string name="error_code_length">Enter all 6 digits</string>
+    <string name="error_code_wrong">That code is not correct. Check the code and your phone\'s clock, then try again.</string>
+    <string name="enroll_success">Authenticator set up. Please log in.</string>
+    <string name="enroll_save_failed">Could not store the secret securely. Please try again.</string>
+    <string name="menu_copy_secret">Copy secret</string>
+    <string name="menu_share_qr">Share QR image</string>
+    <string name="share_warning_title">Share QR image?</string>
+    <string name="share_warning_message">Anyone who gets this image can generate your login codes. Only share it with an app you trust.</string>
+    <string name="button_share">Share</string>
+    <string name="button_cancel">Cancel</string>
+    <string name="share_chooser_title">Share QR image via</string>
+    <string name="share_failed">Could not prepare the image to share</string>
+
+    <!-- TOTP verify -->
+    <string name="totp_verify_title">Verify your code</string>
+    <string name="totp_verify_subtitle">Open your authenticator app and enter the current code.</string>
+    <string name="hint_totp_code">Authentication code</string>
+    <string name="totp_wrong_code">Incorrect code. %1$d attempts left.</string>
+    <string name="totp_wrong_code_last">Incorrect code. One attempt left.</string>
+    <string name="link_backup_code">Use a backup code instead</string>
+    <string name="enroll_first">Set up your authenticator first</string>
+    <string name="totp_secret_error">Could not read your stored secret. Please re-enroll.</string>
+
+    <!-- Backup codes -->
+    <string name="backup_codes_title">Backup codes</string>
+    <string name="backup_codes_intro">Backup codes let you get in if you lose your authenticator app. Each code works only once, so keep them somewhere safe.</string>
+    <string name="backup_codes_remaining">%1$d of %2$d codes remaining</string>
+    <string name="backup_codes_none">You have no backup codes yet.</string>
+    <string name="button_generate_codes">Generate new codes</string>
+    <string name="generate_confirm_title">Generate new codes?</string>
+    <string name="generate_confirm_message">This replaces your current codes. Every older code stops working right away.</string>
+    <string name="button_generate">Generate</string>
+    <string name="generating_codes">Creating your codes…</string>
+    <string name="codes_dialog_title">Your backup codes</string>
+    <string name="codes_dialog_warning">Save these now. They are shown only once and cannot be viewed again.</string>
+    <string name="button_save_txt">Save as .txt</string>
+    <string name="button_done">Done</string>
+    <string name="codes_saved">File saved</string>
+    <string name="codes_save_failed">Could not save the file</string>
+    <string name="share_codes_subject">SecureAuth backup codes</string>
+    <string name="share_codes_chooser">Share backup codes via</string>
+    <string name="codes_generate_failed">Could not create the codes. Please try again.</string>
+
+    <!-- Location and map -->
+    <string name="location_rationale_title">Record where you log in?</string>
+    <string name="location_rationale_message">SecureAuth can save the approximate place of each login, only on this phone. If a login happens more than 100 km from your previous one, you get a warning and it is marked on the login map. This is optional: logging in works without it.</string>
+    <string name="button_allow">Allow</string>
+    <string name="button_not_now">Not now</string>
+    <string name="suspicious_title">Unusual login location</string>
+    <string name="suspicious_message">This login came from about %1$d km away from your previous login. If it was not you, change your password and check your login history.</string>
+    <string name="button_view_map">View map</string>
+    <string name="menu_login_map">Login map</string>
+    <string name="map_empty">No logins with a location yet.</string>
+    <string name="map_legend">Green: successful login. Red: failed or suspicious.</string>
+    <string name="cd_map">Map of login locations</string>
+
+    <!-- Login history -->
+    <string name="button_filter_date">Filter by date</string>
+    <string name="chip_clear_filter">Clear filter</string>
+    <string name="filter_from_title">From date</string>
+    <string name="filter_to_title">To date</string>
+    <string name="filter_showing">Showing %1$s to %2$s</string>
+    <string name="history_empty">No entries to show.</string>
+    <string name="no_location">No location</string>
+    <string name="menu_export_csv">Export CSV</string>
+    <string name="menu_import_csv">Import CSV</string>
+    <string name="export_done">Exported %1$d entries</string>
+    <string name="export_failed">Could not save the file</string>
+    <string name="import_result">Imported %1$d, skipped %2$d duplicates and %3$d invalid rows</string>
+    <string name="import_failed">That file could not be imported. It needs a header row with ts and event columns.</string>
+    <string name="cd_status_ok">Success</string>
+    <string name="cd_status_fail">Failed</string>
+
+    <!-- Account recovery -->
+    <string name="recovery_title">Account recovery</string>
+    <string name="recovery_subtitle">Both options need one of your unused backup codes.</string>
+    <string name="recovery_option_login">Log in with a backup code</string>
+    <string name="recovery_option_reenroll">Set up a new authenticator app</string>
+    <string name="hint_backup_code">Backup code</string>
+    <string name="helper_backup_code">Looks like K7QM-X2PD</string>
+    <string name="button_continue">Continue</string>
+    <string name="error_backup_code_format">Enter a code like K7QM-X2PD</string>
+    <string name="error_backup_code_wrong">That backup code is not valid. %1$d attempts left.</string>
+    <string name="error_backup_code_wrong_last">That backup code is not valid. One attempt left.</string>
+    <string name="recovery_no_codes">This account has no unused backup codes, so it cannot be recovered this way.</string>
+    <string name="recovery_code_accepted">Backup code accepted</string>
+
+    <!-- Biometric gate -->
+    <string name="biometric_title">Confirm it\'s you</string>
+    <string name="biometric_subtitle">Use your fingerprint or your screen lock to finish logging in.</string>
+    <string name="biometric_prompt_title">SecureAuth</string>
+    <string name="biometric_prompt_subtitle">Confirm it\'s you to open your codes</string>
+    <string name="button_try_again">Try again</string>
+    <string name="button_back_to_login">Back to log in</string>
+    <string name="biometric_not_enrolled_title">No fingerprint or screen lock</string>
+    <string name="biometric_not_enrolled_message">To protect your codes, set up a fingerprint or a screen lock (PIN, pattern or password) in your phone\'s settings, then try again.\n\nOn the emulator: set a PIN under Settings > Security, add a fingerprint there, and use Extended controls > Fingerprint to touch the sensor.</string>
+    <string name="button_open_settings">Open settings</string>
+    <string name="biometric_unavailable_title">Check not possible</string>
+    <string name="biometric_unavailable_message">This device has no usable fingerprint sensor or screen lock, so the final login step cannot be completed.</string>
+    <string name="biometric_status_waiting">Waiting for your fingerprint or screen lock…</string>
+    <string name="biometric_status_wrong">That did not match. Try again.</string>
+    <string name="biometric_status_lockout">Too many wrong attempts on this device. Wait a moment, then try again.</string>
+    <string name="biometric_status_error">Could not check your identity: %1$s</string>
+    <string name="session_error">Could not start your session. Please try again.</string>
+    <string name="session_expired">Session expired. Please log in again.</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_code_hint">Tap the code to copy it</string>
+    <string name="dashboard_refreshes_in">New code in %1$d s</string>
+    <string name="cd_countdown_ring">Time left before the code changes: %1$d seconds</string>
+    <string name="code_copied">Code copied</string>
+    <string name="code_placeholder">------</string>
+    <string name="menu_login_history">Login history</string>
+    <string name="menu_backup_codes">Backup codes</string>
+    <string name="menu_trusted_devices">Trusted devices</string>
+    <string name="menu_profile">Profile</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_help">Help</string>
+    <string name="menu_logout">Log out</string>
+    <string name="coming_later">%1$s is coming in a later phase</string>
+
+    <!-- Trusted devices -->
+    <string name="trusted_devices_empty">No trusted devices yet. Tick "Trust this device" when you register an account.</string>
+    <string name="device_added">Added %1$s</string>
+    <string name="device_status_trusted">Trusted</string>
+    <string name="device_status_revoked">Revoked</string>
+    <string name="device_this_device">This device</string>
+    <string name="menu_rename_device">Rename</string>
+    <string name="menu_revoke_device">Revoke</string>
+    <string name="rename_title">Rename device</string>
+    <string name="hint_device_name">Device name</string>
+    <string name="error_device_name">Enter a name of 1 to 40 characters</string>
+    <string name="button_save">Save</string>
+    <string name="device_renamed">Device renamed</string>
+    <string name="revoke_title">Revoke this device?</string>
+    <string name="revoke_message">%1$s will no longer be trusted.</string>
+    <string name="revoke_message_current">%1$s is the phone you are using. From now on, every login on it needs a backup code as well as the 6-digit code, and each login uses up one backup code.</string>
+    <string name="revoke_needs_codes">Create backup codes first. A revoked phone cannot log in without one.</string>
+    <string name="button_revoke">Revoke</string>
+    <string name="device_revoked">Device revoked</string>
+    <string name="cd_device_trusted">Trusted</string>
+    <string name="cd_device_revoked">Revoked</string>
+    <string name="device_action_failed">Could not update the device</string>
+    <string name="recovery_subtitle_revoked">This phone was revoked, so one unused backup code is needed as well.</string>
+    <string name="recovery_revoked_no_codes">This phone was revoked and the account has no unused backup codes, so the login cannot continue.</string>
+</resources>

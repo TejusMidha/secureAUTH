@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_copy_secret"
+        android:title="@string/menu_copy_secret" />
+    <item
+        android:id="@+id/action_share_qr"
+        android:title="@string/menu_share_qr" />
+</menu>

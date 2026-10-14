@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Light palette: deep navy primary, teal secondary -->
+    <color name="navy_primary">#FF0B2A4A</color>
+    <color name="navy_on_primary">#FFFFFFFF</color>
+    <color name="navy_primary_container">#FFD3E4FF</color>
+    <color name="navy_on_primary_container">#FF001C38</color>
+
+    <color name="teal_secondary">#FF00796B</color>
+    <color name="teal_on_secondary">#FFFFFFFF</color>
+    <color name="teal_secondary_container">#FFB2F0E4</color>
+    <color name="teal_on_secondary_container">#FF00201B</color>
+
+    <color name="surface_base">#FFF7F9FC</color>
+    <color name="on_surface_base">#FF191C20</color>
+    <color name="error_base">#FFBA1A1A</color>
+</resources>
