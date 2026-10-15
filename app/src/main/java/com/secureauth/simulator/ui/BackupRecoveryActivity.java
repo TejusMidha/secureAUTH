@@ -16,6 +16,7 @@ import com.secureauth.simulator.data.BackupCode;
 import com.secureauth.simulator.data.BackupCodeDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.LockoutManager;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.User;
 import com.secureauth.simulator.data.UserDao;
 import com.secureauth.simulator.databinding.ActivityBackupRecoveryBinding;
@@ -87,6 +88,11 @@ public class BackupRecoveryActivity extends BaseActivity {
             return;
         }
         revokedDevice = getIntent().getBooleanExtra(EXTRA_REVOKED_DEVICE, false);
+        // Recovery stands in for step 2, so step 1 must really have passed
+        if (!LoginHandshake.getInstance().allowsCodeStep(userId, System.currentTimeMillis())) {
+            goToLogin();
+            return;
+        }
 
         binding = ActivityBackupRecoveryBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());

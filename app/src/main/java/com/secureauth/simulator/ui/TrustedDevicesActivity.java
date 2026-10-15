@@ -144,7 +144,7 @@ public class TrustedDevicesActivity extends BaseActivity {
     private String stateText(TrustedDevice device) {
         String state = getString(device.revoked ? R.string.device_status_revoked : R.string.device_status_trusted);
         if (device.id == currentDeviceId) {
-            state += " - " + getString(R.string.device_this_device);
+            state = getString(R.string.device_state_current, state, getString(R.string.device_this_device));
         }
         return state;
     }

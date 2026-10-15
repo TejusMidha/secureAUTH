@@ -109,6 +109,7 @@ public class BackupRecoveryFlowTest {
 
     /** Launched "for result", the way TotpVerifyActivity opens it, so the result code can be read. */
     private ActivityScenario<BackupRecoveryActivity> launchRecovery() {
+        TestUtils.passPasswordStep(userId); // step 1 comes first in the real flow
         return ActivityScenario.launchActivityForResult(new Intent(context, BackupRecoveryActivity.class)
                 .putExtra(BackupRecoveryActivity.EXTRA_USER_ID, userId));
     }
@@ -305,6 +306,7 @@ public class BackupRecoveryFlowTest {
 
     @Test
     public void theLinkOnTheCodeScreenLeadsThroughRecoveryToTheBiometricStep() throws Exception {
+        TestUtils.passPasswordStep(userId);
         ActivityScenario<TotpVerifyActivity> scenario = ActivityScenario.launch(
                 new Intent(context, TotpVerifyActivity.class)
                         .putExtra(TotpVerifyActivity.EXTRA_USER_ID, userId));

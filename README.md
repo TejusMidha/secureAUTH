@@ -41,13 +41,33 @@ Any failure stops the flow. 3 failures in a row trigger a 5-minute lockout.
 ## Build and run
 
 1. Open the project folder in Android Studio and let Gradle sync.
-2. Create or start an emulator (Pixel, recent Google Play image). Set a screen-lock PIN and add a
-   fingerprint under Extended Controls → Fingerprint.
+2. Create or start an emulator (Pixel, recent Google Play image). To log in by hand, set a screen-lock
+   PIN and add a fingerprint under Extended Controls → Fingerprint (the third login step needs them).
 3. Run the `app` configuration, or from a terminal:
    - Build: `./gradlew assembleDebug`
-   - Unit tests: `./gradlew test`
-   - Instrumented tests: `./gradlew connectedAndroidTest` (emulator running)
+   - Unit tests (run on the PC): `./gradlew test`
+   - Instrumented tests (emulator running): `./gradlew connectedDebugAndroidTest`
+   - Lint: `./gradlew lintDebug`
 4. For the login map, add `MAPS_API_KEY=your_key` to `local.properties` (this file is not committed).
+   Without it the app still runs; the map is just blank.
+5. Release build (smaller, R8-shrunk): `./gradlew bundleRelease`. Signing and the Play Store upload
+   are explained in `docs/RELEASE.md`.
+
+The instrumented tests do not depend on the emulator having a screen lock, a location permission or a
+fingerprint set up.
+
+## Documentation
+
+| File | What it is |
+|---|---|
+| `SECUREAUTH_PLAN.md` | The build plan, rules and the progress tracker |
+| `docs/DEMO_SCRIPT.md` | The 5-minute demo, minute by minute, with preparation and fixes |
+| `docs/VIVA.md` | Five likely examiner questions with short answers for every module, with course topic and CO |
+| `docs/VIVA_NOTES.md` | Per-phase notes: five key points and three questions each |
+| `docs/SECURITY_REVIEW.md` | Review against the hard rules and the handshake: what was checked, fixed and left |
+| `docs/RELEASE.md` | Signing key, signed bundle, Maps key for release, upload checklist |
+| `docs/privacy-policy.md`, `docs/play-data-safety.md` | Privacy policy and the draft Play Store data-safety answers |
+| `docs/CONTRIBUTIONS.md`, `docs/GENAI_USAGE.md` | Who did what, and where generative AI was used |
 
 ## Team
 

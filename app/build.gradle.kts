@@ -16,6 +16,19 @@ val mapsApiKey: String = run {
     properties.getProperty("MAPS_API_KEY", "").trim().ifEmpty { "MAPS_API_KEY_NOT_SET" }
 }
 
+// Signing details for the release build live in keystore.properties (a file that is never committed):
+//     storeFile=C:/path/to/secureauth-release.jks
+//     storePassword=...
+//     keyAlias=...
+//     keyPassword=...
+// Without that file the release build is still produced, just unsigned.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
 android {
     namespace = "com.secureauth.simulator"
     compileSdk {
@@ -38,10 +51,27 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // R8 shrinks and renames the code, and the resource shrinker removes unused resources.
+            // Extra keep rules, if ever needed, go in src/main/keepRules/rules.keep
             optimization {
-                enable = false
+                enable = true
+            }
+            isShrinkResources = true
+            if (keystoreProperties.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }

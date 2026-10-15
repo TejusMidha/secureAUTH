@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the cache/qr folder can be shared through FileProvider, nothing else in app storage -->
+<!-- Only cache/qr (the QR image we share) and cache/camera (where the camera app writes the
+     profile photo) can be reached through FileProvider, nothing else in app storage -->
 <paths>
     <cache-path
         name="qr"
         path="qr/" />
+    <cache-path
+        name="camera"
+        path="camera/" />
 </paths>

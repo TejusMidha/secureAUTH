@@ -1,6 +1,9 @@
 package com.secureauth.simulator.ui;
 
+import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -9,6 +12,8 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 
 import androidx.annotation.Nullable;
+import androidx.core.graphics.drawable.RoundedBitmapDrawable;
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.secureauth.simulator.R;
@@ -22,6 +27,7 @@ import com.secureauth.simulator.data.TotpAccountDao;
 import com.secureauth.simulator.data.User;
 import com.secureauth.simulator.data.UserDao;
 import com.secureauth.simulator.databinding.ActivityDashboardBinding;
+import com.secureauth.simulator.io.AvatarStore;
 
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
@@ -37,16 +43,21 @@ public class DashboardActivity extends BaseActivity {
     /** Set by the login step when this login was far from the previous one (distance in km). */
     public static final String EXTRA_SUSPICIOUS_KM = "suspicious_km";
 
+    /** Size of the profile photo in the toolbar. */
+    private static final int AVATAR_DP = 40;
+
     /** The user, their authenticator and its decrypted secret. */
     private static final class Data {
         final User user;
         final TotpAccount account;
         final byte[] secret;
+        final Bitmap avatar;   // the profile photo, or null if there is none
 
-        Data(User user, TotpAccount account, byte[] secret) {
+        Data(User user, TotpAccount account, byte[] secret, Bitmap avatar) {
             this.user = user;
             this.account = account;
             this.secret = secret;
+            this.avatar = avatar;
         }
     }
 
@@ -120,6 +131,7 @@ public class DashboardActivity extends BaseActivity {
      * Pressing the code dims it (OnTouchListener gives instant feedback); lifting the finger
      * inside it counts as a click, which copies the code.
      */
+    @SuppressLint({"ClickableViewAccess", "ClickableViewAccessibility"}) // the listener only dims the code and returns false, so the normal click (and its accessibility action) still runs
     private void setUpTapToCopy() {
         binding.textCode.setOnTouchListener((view, event) -> {
             switch (event.getActionMasked()) {
@@ -150,6 +162,11 @@ public class DashboardActivity extends BaseActivity {
     }
 
     @Override
+    protected boolean isSecureScreen() {
+        return true; // shows live codes / backup codes
+    }
+
+    @Override
     protected void onStart() {
         super.onStart();
         // Check before decrypting anything: onStart runs before onResume's own check
@@ -172,6 +189,8 @@ public class DashboardActivity extends BaseActivity {
 
     /** Loads the account and decrypts the secret off the UI thread. */
     private void loadData() {
+        final Context appContext = getApplicationContext();
+        final int avatarSizePx = (int) (AVATAR_DP * getResources().getDisplayMetrics().density);
         runInBackground(() -> {
             User user = userDao.getById(userId);
             List<TotpAccount> accounts = accountDao.listForUser(userId);
@@ -179,8 +198,10 @@ public class DashboardActivity extends BaseActivity {
                 return null;
             }
             TotpAccount found = accounts.get(0);
+            // Small copy for the toolbar, read here so the UI thread never decodes a picture
+            Bitmap avatar = AvatarStore.load(appContext, user.avatarUri, avatarSizePx);
             try {
-                return new Data(user, found, KeystoreHelper.decrypt(found.secretEnc, found.iv));
+                return new Data(user, found, KeystoreHelper.decrypt(found.secretEnc, found.iv), avatar);
             } catch (GeneralSecurityException e) {
                 return null;
             }
@@ -205,10 +226,27 @@ public class DashboardActivity extends BaseActivity {
         binding.textIssuer.setText(account.issuer);
         binding.textAccount.setText(data.user.username);
         binding.ring.setPeriodSeconds(account.period);
+        showAvatar(data.avatar);
 
         lastCode = ""; // forces the display to redraw even if the code did not change
         handler.removeCallbacks(tick);
         handler.post(tick);
+    }
+
+    /** The profile photo as a round icon at the left of the toolbar; tapping it opens Profile. */
+    private void showAvatar(@Nullable Bitmap avatar) {
+        if (getSupportActionBar() == null) {
+            return;
+        }
+        if (avatar == null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+            return;
+        }
+        RoundedBitmapDrawable round = RoundedBitmapDrawableFactory.create(getResources(), avatar);
+        round.setCircular(true);
+        getSupportActionBar().setHomeAsUpIndicator(round);
+        getSupportActionBar().setHomeActionContentDescription(R.string.menu_profile);
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
     }
 
     private void wipeSecret() {
@@ -267,11 +305,16 @@ public class DashboardActivity extends BaseActivity {
             startActivity(new Intent(this, TrustedDevicesActivity.class)); // explicit Intent
             return true;
         }
-        if (item.getItemId() == R.id.action_profile
-                || item.getItemId() == R.id.action_settings
-                || item.getItemId() == R.id.action_help) {
-            // These screens are built in later phases
-            showToast(getString(R.string.coming_later, item.getTitle()));
+        if (item.getItemId() == R.id.action_profile || item.getItemId() == android.R.id.home) {
+            startActivity(new Intent(this, ProfileActivity.class)); // explicit Intent
+            return true;
+        }
+        if (item.getItemId() == R.id.action_settings) {
+            startActivity(new Intent(this, SettingsActivity.class)); // explicit Intent
+            return true;
+        }
+        if (item.getItemId() == R.id.action_help) {
+            startActivity(new Intent(this, HelpActivity.class)); // explicit Intent
             return true;
         }
         return super.onOptionsItemSelected(item);

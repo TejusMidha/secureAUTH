@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How TOTP works</title>
+<!-- No scripts: this page is plain HTML and CSS, so the WebView can keep JavaScript switched off -->
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; background: #ffffff; color: #1a1c1e; line-height: 1.5; }
+  h1 { font-size: 1.4em; color: #0b2a4a; margin-top: 0; }
+  h2 { font-size: 1.1em; color: #0b2a4a; margin-top: 1.6em; }
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 12px 0; }
+  .box { border: 2px solid #0b2a4a; border-radius: 10px; padding: 10px 12px; background: #eef3f8; }
+  .box small { display: block; color: #44474e; }
+  .inputs { display: flex; gap: 8px; }
+  .inputs .box { flex: 1; }
+  .arrow { text-align: center; font-size: 1.4em; color: #00796b; line-height: 1.1; }
+  .result { border-color: #00796b; background: #e0f2f1; font-size: 1.3em; text-align: center; letter-spacing: 0.15em; }
+  .note { border-left: 4px solid #00796b; background: #f2f7f6; padding: 8px 12px; margin: 12px 0; }
+  code { background: #eceff1; padding: 1px 4px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #c4c7cc; padding: 6px 8px; text-align: left; }
+</style>
+</head>
+<body>
+
+<h1>How a TOTP code is made</h1>
+<p>
+  <b>TOTP</b> means <i>Time-based One-Time Password</i>. The 6-digit code on your Dashboard is not
+  sent to you by anyone. Your phone works it out, and the server (here: this app) works out the
+  same number independently. If the two numbers match, you must know the secret.
+</p>
+
+<h2>The recipe</h2>
+<div class="flow">
+  <div class="inputs">
+    <div class="box"><b>Secret</b><small>20 random bytes, shown as the QR code when you set up</small></div>
+    <div class="box"><b>Clock</b><small>seconds since 1 Jan 1970</small></div>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>1. Time step</b><small>clock &divide; 30 = a counter that changes every 30 seconds</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>2. HMAC</b><small>the counter is mixed with the secret using HMAC-SHA1 (a keyed fingerprint)</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>3. Dynamic truncation</b><small>the last 4 bits pick 4 bytes of the fingerprint to keep</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>4. Last 6 digits</b><small>the number is cut down with &ldquo;remainder after dividing by 1,000,000&rdquo;</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box result">287 082</div>
+</div>
+
+<h2>Why it is safe to use offline</h2>
+<div class="note">
+  Nothing in the recipe needs a network. It needs only the <b>secret</b> and the <b>clock</b>.
+  That is why the code keeps working in airplane mode.
+</div>
+
+<h2>Why the code changes every 30 seconds</h2>
+<p>
+  The counter in step 1 goes up by one every 30 seconds, so the whole result changes. A stolen
+  code is useless half a minute later. The ring on the Dashboard shows how long is left.
+</p>
+
+<h2>Why your code may be accepted slightly early or late</h2>
+<p>
+  Phone clocks are never perfectly equal. When checking a code, the app also accepts the step
+  just before and the step just after the current one (&plusmn;1 step, about 30 seconds either
+  way). A code two steps away is rejected.
+</p>
+
+<h2>A worked example from the standard</h2>
+<table>
+  <tr><th>What</th><th>Value</th></tr>
+  <tr><td>Secret (ASCII)</td><td><code>12345678901234567890</code></td></tr>
+  <tr><td>Time</td><td>59 seconds after 1 Jan 1970</td></tr>
+  <tr><td>Time step (59 &divide; 30)</td><td>1</td></tr>
+  <tr><td>8-digit code</td><td><code>94287082</code></td></tr>
+</table>
+<p>
+  This is one of the test values in RFC 6238 (Appendix B). This app&rsquo;s unit tests check that
+  its hand-written engine produces exactly these numbers.
+</p>
+
+<h2>What to do if your code is rejected</h2>
+<ul>
+  <li>Check that the date and time on your phone are set to <b>automatic</b>.</li>
+  <li>Make sure you are reading the code for this app and not another account.</li>
+  <li>If you changed the code length, period or algorithm in Settings, set up your authenticator again so both sides agree.</li>
+  <li>Lost the authenticator? Use one of your backup codes.</li>
+</ul>
+
+</body>
+</html>

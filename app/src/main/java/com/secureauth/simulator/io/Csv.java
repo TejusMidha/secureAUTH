@@ -67,7 +67,7 @@ public final class Csv {
         if (text == null || text.isEmpty()) {
             return records;
         }
-        if (text.charAt(0) == '﻿') {
+        if (text.charAt(0) == '\uFEFF') {
             text = text.substring(1); // Excel likes to put a byte-order mark at the start
         }
 

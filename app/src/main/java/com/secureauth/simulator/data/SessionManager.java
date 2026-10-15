@@ -29,14 +29,8 @@ public final class SessionManager {
         }
     }
 
-    public static final long DEFAULT_AUTO_LOCK_MS = 5 * 60 * 1000L;
-    private static final long MIN_AUTO_LOCK_MS = 60 * 1000L;
-    private static final long MAX_AUTO_LOCK_MS = 30 * 60 * 1000L;
+    public static final long DEFAULT_AUTO_LOCK_MS = AppSettings.DEFAULT_AUTO_LOCK_MS;
     private static final int TOKEN_BYTES = 32;
-
-    /** Same preferences file the Settings screen (Phase 14) will write to. */
-    private static final String PREFS_NAME = "secureauth_prefs";
-    private static final String PREF_AUTO_LOCK_MS = "auto_lock_ms";
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final SessionManager INSTANCE = new SessionManager();
@@ -77,9 +71,7 @@ public final class SessionManager {
 
     /** The auto-lock time from Settings (default 5 minutes), kept inside 1 to 30 minutes. */
     public static long getAutoLockMs(Context context) {
-        long saved = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getLong(PREF_AUTO_LOCK_MS, DEFAULT_AUTO_LOCK_MS);
-        return Math.max(MIN_AUTO_LOCK_MS, Math.min(MAX_AUTO_LOCK_MS, saved));
+        return AppSettings.getAutoLockMs(context);
     }
 
     /**

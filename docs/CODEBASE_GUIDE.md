@@ -2,9 +2,9 @@
 
 *A beginner-friendly tour of every file and every method in the app, written for the three team members who must explain the code in the viva. Course: Mobile Application Development (702AI0E002), NMIMS, Mini Project.*
 
-> **How this guide was made.** It was written by reading the real source in this repository (`app/src/main/java`, `app/src/main/res`, `AndroidManifest.xml`, the Gradle files and the tests). Nothing is described that does not exist. **Every code block was copied by a script from the real source file** (the guide's text only names the method to copy), so the code you see is exactly what is in the repository. Two cosmetic changes are made to copied code: methods inside a class are shifted left so they are easier to read, and a line containing only `// ...` marks lines left out of a long method. In the *annotated copies* of the core files, lines that begin with `// ▶` are explanations added by this guide; every other line is the real source.
+> **How this guide was made.** It was written by reading the real source in this repository (`app/src/main/java`, `app/src/main/res`, `AndroidManifest.xml`, the Gradle files and the tests). Nothing is described that does not exist. **Every Java, XML, HTML and Gradle code block was copied by a script from the real source file** (the guide's text only names the method or lines to copy), so the code you see is exactly what is in the repository. Only the Mermaid diagrams, the project tree and the tables are written by hand. Two cosmetic changes are made to copied code: methods inside a class are shifted left so they are easier to read, and a line containing only `// ...` marks lines left out of a long method. In the *annotated copies* of the core files, lines that begin with `// ▶` are explanations added by this guide; every other line is the real source.
 >
-> **Snapshot.** The guide describes the project as it stands after **Phases 1–11** of `SECUREAUTH_PLAN.md` plus the **Phase 12 (trusted devices)** code, which is already in the repository even though the plan's progress tracker has not been updated for it yet. **Profile (camera/gallery), Settings, Help (WebView), the broadcast receivers and the release polish (Phases 13–16) are not built yet.** Their sections say so plainly and point to [Section 11](#11-not-implemented-and-known-issues).
+> **Snapshot.** The guide describes the project as it stands after **all 16 phases** of `SECUREAUTH_PLAN.md` (Phase 16 is the last: integration test, security review and viva preparation). Everything in the plan is built: the handshake, backup codes, history and CSV, map, trusted devices, **Profile (camera/gallery), Settings, Help (WebView), the broadcast receivers** and the **release work** (R8, `FLAG_SECURE`, icon, privacy documents). What is still missing or limited is listed honestly in [Section 11](#11-not-implemented-and-known-issues).
 
 ## Contents
 
@@ -13,7 +13,7 @@
 | 1 | [Overview](#1-overview) | What the app does, the tech stack, how to build and run it, the login handshake |
 | 2 | [Architecture](#2-architecture) | The layers (diagram), why the code is split this way, the full project tree |
 | 3 | [Database](#3-database) | The six SQLite tables, their DAOs and which screens read and write them |
-| 4 | [Major components](#4-major-components) | Every class and every method, one sub-section per component (4.1 – 4.17) |
+| 4 | [Major components](#4-major-components) | Every class and every method, one sub-section per component (4.1 – 4.19) |
 | 5 | [Workflows](#5-workflows) | Step-by-step data flow between files, with sequence diagrams |
 | 6 | [Course policy coverage matrix](#6-course-policy-coverage-matrix) | Units 1–7, Labs 1–10, CO1–CO4: where each is covered, and what is not |
 | 7 | [Rubric mapping](#7-rubric-mapping) | The five marking criteria (40 marks) and the evidence for each |
@@ -34,12 +34,14 @@
 [4.9 Login history and CSV](#49-login-history-and-csv) ·
 [4.10 Location and Map](#410-location-and-map) ·
 [4.11 Trusted devices](#411-trusted-devices) ·
-[4.12 Profile (camera and gallery)](#412-profile-camera-and-gallery--not-built-yet) ·
-[4.13 Settings](#413-settings--not-built-yet) ·
-[4.14 Help (WebView)](#414-help-webview--not-built-yet) ·
-[4.15 Broadcast receivers](#415-broadcast-receivers--not-built-yet) ·
+[4.12 Profile (camera and gallery)](#412-profile-camera-and-gallery) ·
+[4.13 Settings](#413-settings) ·
+[4.14 Help (WebView)](#414-help-webview) ·
+[4.15 Broadcast receivers](#415-broadcast-receivers) ·
 [4.16 Build and release config](#416-build-and-release-config) ·
-[4.17 Tests](#417-tests)
+[4.17 Tests](#417-tests) ·
+[4.18 Login handshake guard](#418-login-handshake-guard) ·
+[4.19 Small methods not listed above](#419-small-methods-not-listed-above)
 
 ---
 
@@ -51,7 +53,7 @@
 2. The one-time codes are made by a **TOTP engine written by hand** (RFC 6238 / RFC 4226): our own Base32 reader and our own HMAC-based code maker, with no OTP library. The codes match Google Authenticator for the same secret.
 3. The secret behind the codes is **encrypted with a key that lives inside the Android Keystore**; passwords and backup codes are stored only as **salted PBKDF2 hashes**.
 4. Every step of every login is written to an **audit log** in SQLite, shown as a filterable list, exportable to CSV, and drawn on a Google map; a login more than 100 km from the previous one is flagged as suspicious.
-5. Extras that make it a complete app: 10 single-use backup codes, a lockout after 3 wrong attempts, trusted-device records, and an auto-lock that ends the session after a few minutes.
+5. Extras that make it a complete app: 10 single-use backup codes, a lockout after 3 wrong attempts, trusted-device records, a profile photo from the camera or gallery, settings for the code format and the auto-lock time, a help page in a `WebView`, and an auto-lock that ends the session after a few minutes or when the screen turns off.
 
 ### 1.2 The login handshake in one line
 
@@ -61,7 +63,7 @@ Any failure stops the flow. Three failures in a row (counted across all steps) l
 
 ### 1.3 The screens and how you move between them
 
-There are 12 screens (Activities). Arrows show which screen opens which (all are explicit Intents unless noted).
+There are 15 screens (Activities). Arrows show which screen opens which (all are explicit Intents unless noted).
 
 ```mermaid
 flowchart TD
@@ -80,12 +82,16 @@ flowchart TD
     Dash -->|menu| History["LoginHistoryActivity"]
     Dash -->|menu| Codes["BackupCodesActivity"]
     Dash -->|menu| Devices["TrustedDevicesActivity"]
+    Dash -->|menu or toolbar photo| Profile["ProfileActivity"]
+    Dash -->|menu| Settings["SettingsActivity"]
+    Dash -->|menu| Help["HelpActivity"]
+    Settings -->|Set up authenticator again| Enroll
     Dash -->|suspicious login dialog| Map["LoginMapActivity"]
     History -->|menu| Map
     Dash -->|Log out| Login
 ```
 
-Profile, Settings and Help appear in the Dashboard menu but only show a "coming in a later phase" toast (see [Section 11](#11-not-implemented-and-known-issues)).
+Every screen except Splash, Login, Register, the code, backup-recovery, fingerprint and Enroll screens needs a live session; Help needs none. Before the code, recovery, fingerprint and Enroll screens open, they also check the in-memory **login handshake** (see [4.18](#418-login-handshake-guard)).
 
 ### 1.4 Technology stack
 
@@ -100,6 +106,8 @@ Profile, Settings and Help appear in the Dashboard menu but only show a "coming 
 | Biometrics | `androidx.biometric` 1.1.0 (`BiometricPrompt`) | `BiometricGateActivity` |
 | QR code | `com.journeyapps:zxing-android-embedded` 4.3.0 | `EnrollActivity` |
 | Maps / location | `play-services-maps` 20.1.0, `play-services-location` 21.4.0 | `LoginMapActivity`, `LocationHelper` |
+| Camera / gallery / web | `ActivityResultContracts.TakePicture` and `PickVisualMedia`; `WebView` | `ProfileActivity`, `HelpActivity` |
+| Release | R8 code shrinking and resource shrinking, optional signing from `keystore.properties` | `app/build.gradle.kts`, `docs/RELEASE.md` |
 | Pull to refresh | `swiperefreshlayout` 1.2.0 | Dashboard |
 | Other libraries | AppCompat 1.8.0, Material 1.14.0, ConstraintLayout 2.2.2 | `gradle/libs.versions.toml` |
 | Tests | JUnit 4.13.2 (local), AndroidX Test JUnit 1.3.0 + Espresso 3.7.0 (on a device) | `app/src/test`, `app/src/androidTest` |
@@ -115,7 +123,9 @@ Profile, Settings and Help appear in the Dashboard menu but only show a "coming 
    |---|---|
    | Build a debug APK | `./gradlew assembleDebug` |
    | Local unit tests (no device) | `./gradlew test` |
-   | Tests on a device or emulator | `./gradlew connectedAndroidTest` |
+   | Tests on a device or emulator | `./gradlew connectedDebugAndroidTest` |
+   | Android Lint | `./gradlew lintDebug` |
+   | Shrunk release bundle | `./gradlew bundleRelease` (signing: see `docs/RELEASE.md`) |
 
 5. **Try the handshake**: *Get started → Create account* (tick "Trust this device") → scan the QR with Google Authenticator (or type the secret) → type the code to confirm → log in with the password → type the 6-digit code → confirm fingerprint/PIN → Dashboard.
 6. **Fake a location** on the emulator with *Extended controls → Location* to see a login placed on the map.
@@ -124,15 +134,16 @@ Profile, Settings and Help appear in the Dashboard menu but only show a "coming 
 
 | What | Count |
 |---|---|
-| Screens (Activities in `AndroidManifest.xml`) | 12 |
-| Java source files in `app/src/main/java` (plus 6 `package-info.java` files) | 48 |
-| Lines of Java in the app (all `main` files) | about 5,800 |
-| XML layouts / menus / drawables | 16 / 4 / 4 (plus launcher icons) |
+| Screens (Activities in `AndroidManifest.xml`) | 15 |
+| Java source files in `app/src/main/java` (plus 6 `package-info.java` files) | 57 |
+| Lines of Java in the app (all `main` files) | about 7,300 |
+| XML layouts / menus / drawables (plus the HTML help page in `assets`) | 19 / 4 / 6 |
 | SQLite tables | 6 |
-| Local unit test files / `@Test` methods (`src/test`) | 15 / about 120 |
-| Device test files / `@Test` methods (`src/androidTest`) | about 29 / about 200 |
+| String resources | 217 |
+| Local unit test files / `@Test` methods (`src/test`) | 21 / 179 |
+| Device test files / `@Test` methods (`src/androidTest`) | 39 / 291 |
 
-*Test counts grow as phases are added; the exact list of test files is in [4.17](#417-tests).*
+*Counts are as of writing; the exact list of test files is in [4.17](#417-tests).*
 
 ### 1.7 How to read the rest of this guide
 
@@ -152,16 +163,16 @@ The app is split into three layers plus a few pieces that belong to Android or G
 ```mermaid
 flowchart TD
     subgraph UI["UI layer: what the user sees (package ui, views, res)"]
-        ACT["12 Activities in ui/, all extend BaseActivity"]
+        ACT["15 Activities in ui/, all extend BaseActivity"]
         VIEW["Custom View: CountdownRingView in views/"]
         XML["XML layouts, menus, strings, themes in res/"]
     end
     subgraph LOGIC["Logic layer: rules and helpers with no screens"]
         CRYPTO["crypto/: Base32, TotpEngine, PasswordHasher, KeystoreHelper, BackupCodeGenerator"]
         LOC["location/: LocationHelper"]
-        FILES["io/: Csv, CsvImporter, FileExporter"]
-        RULES["Rules in data/: LockoutManager, SessionManager, DeviceTrust"]
-        RECV["receiver/: empty, planned"]
+        FILES["io/: Csv, CsvImporter, FileExporter, AvatarStore"]
+        RULES["Rules in data/: LockoutManager, SessionManager, LoginHandshake, DeviceTrust, AppSettings"]
+        RECV["receiver/: AirplaneModeReceiver, ScreenOffReceiver"]
     end
     subgraph DATA["Data layer: storage"]
         DAO["DAOs: UserDao, TotpAccountDao, BackupCodeDao, AuditLogDao, TrustedDeviceDao, SessionDao"]
@@ -174,7 +185,9 @@ flowchart TD
         MAPS["Google Maps and Fused Location"]
         ZX["ZXing QR encoder"]
         SAF["System file picker, SAF"]
-        CAM["Camera and gallery, planned"]
+        CAM["Camera app and gallery picker"]
+        WEB["WebView, help page and RFC 6238 page"]
+        SYS["Android system broadcasts"]
         PREFS["SharedPreferences secureauth_prefs"]
     end
     XML -->|inflated by ViewBinding| ACT
@@ -196,21 +209,23 @@ flowchart TD
     ACT --> SAF
     RULES --> PREFS
     LOC --> PREFS
-    ACT -.-> CAM
-    ACT -.-> RECV
+    ACT --> CAM
+    ACT --> WEB
+    ACT --> RECV
+    SYS --> RECV
 ```
 
-*Solid arrows exist in the code today. Dotted arrows are planned (Phases 13 and 14).*
+*Every arrow exists in the code today. `BaseActivity` registers the two receivers while a screen is visible; the receivers only report to the screen, which decides what to do.*
 
 ### 2.2 The layers in plain English
 
 **UI layer — "what you touch".** On Android every screen is an **Activity**. In this project each screen is two files: a Java class in `ui/` (what happens when you tap) and an XML layout in `res/layout/` (where the buttons and text boxes sit). The Java class never builds the layout by hand; it asks **ViewBinding** for a generated class (for example `ActivityLoginBinding`) that has one typed field per view. The only hand-made view is `CountdownRingView` in `views/`, which draws the shrinking ring with a `Canvas`. All screens extend `BaseActivity`, which holds the code every screen needs (session check, background thread, toast, clipboard, location prompt).
 
-**Logic layer — "the rules".** This is code that makes decisions but does not draw anything: *crypto* (making and checking codes and hashes), *location* (finding where a login happened and how far it is from the last one), *io* (reading and writing CSV and text files) and the small rule classes in `data/` (`LockoutManager`, `SessionManager`, `DeviceTrust`). Because they have no screens, most of them can be tested on a plain computer with JUnit — the TOTP engine is tested against the official RFC 6238 test vectors without any phone.
+**Logic layer — "the rules".** This is code that makes decisions but does not draw anything: *crypto* (making and checking codes and hashes), *location* (finding where a login happened and how far it is from the last one), *io* (reading and writing CSV and text files, and keeping the profile photo), *receiver* (listening for airplane mode and screen-off) and the small rule classes in `data/` (`LockoutManager`, `SessionManager`, `LoginHandshake`, `DeviceTrust`, `AppSettings`). Because they have no screens, most of them can be tested on a plain computer with JUnit — the TOTP engine is tested against the official RFC 6238 test vectors without any phone.
 
 **Data layer — "the memory".** Each of the six SQLite tables has one **DAO** (*Data Access Object*) class with methods such as `insert`, `getById` and `listForUser`. A DAO talks to the database through the single `DbHelper`. All SQL lives here, and every value goes through a `?` placeholder (never glued into the SQL text), which blocks SQL injection.
 
-**External pieces.** The Android Keystore keeps the encryption key where our code cannot read it. `BiometricPrompt` is the system fingerprint dialog. Google Maps and the Fused Location Provider come from Google Play services. ZXing turns text into a QR image. The Storage Access Framework (SAF) is the system file picker that lets the user choose where a file is saved without the app asking for storage permission.
+**External pieces.** The Android Keystore keeps the encryption key where our code cannot read it. `BiometricPrompt` is the system fingerprint dialog. The camera app and the photo picker supply the profile picture; a `WebView` shows the help pages. Google Maps and the Fused Location Provider come from Google Play services. ZXing turns text into a QR image. The Storage Access Framework (SAF) is the system file picker that lets the user choose where a file is saved without the app asking for storage permission.
 
 **Why split it like this?**
 
@@ -222,7 +237,7 @@ flowchart TD
 ### 2.3 Two habits you will see in every screen
 
 1. **Slow work goes off the screen thread.** Hashing a password with PBKDF2 (120,000 rounds) and reading SQLite take noticeable time; doing that on the UI thread would freeze the app. `BaseActivity.runInBackground(work, onDone)` runs `work` on a helper thread and then calls `onDone` back on the UI thread.
-2. **Who is logged in is never read from an Intent extra on protected screens.** The early screens (Login → TOTP → Biometric) pass a `userId` extra because no session exists yet. Once the session exists, every protected screen calls `SessionManager.getInstance().getUserId()` — an extra "could name any user".
+2. **Who is logged in is never read from an Intent extra on protected screens.** The early screens (Login → TOTP → Biometric) pass a `userId` extra because no session exists yet, and each of them also asks the in-memory `LoginHandshake` whether the earlier steps really happened. Once the session exists, every protected screen calls `SessionManager.getInstance().getUserId()` — an extra "could name any user".
 
 ### 2.4 The complete project tree
 
@@ -236,9 +251,10 @@ SecureAuthSimulator/
 ├── .gitignore                      # Keeps build outputs, local.properties, keystores and APK/AAB files out of Git
 ├── build.gradle.kts                # Top-level Gradle file: declares the Android application plugin (not applied here)
 ├── settings.gradle.kts             # Repositories (Google, Maven Central), project name, includes the :app module
-├── gradle.properties               # Gradle JVM memory, UTF-8, configuration cache switched on
+├── gradle.properties               # Gradle JVM memory, UTF-8, configuration cache on, flag that lets the release build use R8
 ├── gradlew / gradlew.bat           # Gradle wrapper launch scripts (Linux/macOS and Windows)
 ├── local.properties                # This PC's SDK path and optional MAPS_API_KEY (never committed)
+├── keystore.properties             # (not in the repository) optional release signing details, git-ignored
 ├── gradle/
 │   ├── libs.versions.toml          # Version catalog: every library and plugin version in one place
 │   ├── gradle-daemon-jvm.properties# Which JDK (21) Gradle's daemon needs and where to download it
@@ -248,14 +264,22 @@ SecureAuthSimulator/
 ├── docs/
 │   ├── CODEBASE_GUIDE.md           # This guide
 │   ├── CONTRIBUTIONS.md            # Table of who built what, problems met and how they were solved (rubric 4)
-│   ├── GENAI_USAGE.md              # Log template for AI assistance
-│   └── VIVA_NOTES.md               # Per-phase viva bullets and examiner questions
+│   ├── GENAI_USAGE.md              # Log of where generative AI was used
+│   ├── VIVA_NOTES.md               # Per-phase viva bullets and examiner questions
+│   ├── VIVA.md                     # 5 likely examiner questions for each of 16 modules, with topic and CO
+│   ├── DEMO_SCRIPT.md              # The 5-minute demo, minute by minute
+│   ├── SECURITY_REVIEW.md          # Review against the hard rules; ways past a step, fixes and known limits
+│   ├── RELEASE.md                  # Signing key, signed AAB, upload checklist
+│   ├── privacy-policy.md           # Privacy policy
+│   └── play-data-safety.md         # Draft answers for the Play Store data-safety form
 └── app/
     ├── .gitignore                  # Ignores app/build
-    ├── build.gradle.kts            # Module build: SDK levels, Maps key placeholder, ViewBinding, dependencies
+    ├── lint.xml                    # Lint settings (one rule relaxed, with the reason)
+    ├── build.gradle.kts            # Module build: SDK levels, Maps key, ViewBinding, dependencies, R8 and optional signing
     └── src/
         ├── main/
-        │   ├── AndroidManifest.xml # Declares permissions, 12 screens, the Maps key, FileProvider
+        │   ├── AndroidManifest.xml # Declares permissions, 15 screens, the Maps key, FileProvider, backup off
+        │   ├── assets/help.html    # The offline "How TOTP works" page shown in the Help WebView
         │   ├── keepRules/rules.keep# Template R8 keep-rules file (nothing active in it yet)
         │   ├── java/com/secureauth/simulator/
         │   │   ├── crypto/
@@ -283,22 +307,27 @@ SecureAuthSimulator/
         │   │   │   ├── LockoutManager.java    # 3 strikes -> 5-minute lock, shared by every handshake step
         │   │   │   ├── SessionManager.java    # In-memory session token + its SHA-256 hash in the database
         │   │   │   ├── DeviceTrust.java       # Which row is "this phone"; trust, revoked check, name rules
+        │   │   │   ├── LoginHandshake.java    # In-memory proof of how far the current login has got (password, code)
+        │   │   │   ├── AppSettings.java       # The user settings (digits, period, algorithm, auto-lock, location) and their rules
         │   │   │   └── package-info.java      # Package description comment
         │   │   ├── io/
         │   │   │   ├── Csv.java               # Minimal RFC 4180 CSV writer/reader plus formula-injection guard
         │   │   │   ├── CsvImporter.java       # Validates and imports an audit-log CSV into the history
         │   │   │   ├── FileExporter.java      # Writes .txt/.csv through SAF; builds the CSV and backup-code text
+        │   │   │   ├── AvatarStore.java       # Saves, loads and deletes the profile photo (EXIF turn, square crop, 512 px JPEG)
         │   │   │   └── package-info.java      # Package description comment
         │   │   ├── location/
         │   │   │   ├── LocationHelper.java    # Optional one-shot location lookup, haversine distance, 100 km rule
         │   │   │   └── package-info.java      # Package description comment
         │   │   ├── receiver/
-        │   │   │   └── package-info.java      # Only a comment: broadcast receivers are planned for Phase 14
+        │   │   │   ├── AirplaneModeReceiver.java # Hears "airplane mode switched" and tells its listener when it turned ON
+        │   │   │   ├── ScreenOffReceiver.java # Hears "screen turned off" and tells its listener
+        │   │   │   └── package-info.java      # Package description comment
         │   │   ├── views/
         │   │   │   ├── CountdownRingView.java # Custom View: Canvas ring that shrinks and turns red in the last 5 s
         │   │   │   └── package-info.java      # Package description comment
         │   │   └── ui/
-        │   │       ├── BaseActivity.java      # Parent of every screen: session guard, background thread, toast, clipboard, location prompt
+        │   │       ├── BaseActivity.java      # Parent of every screen: session guard, FLAG_SECURE, receivers, background thread, toast, clipboard, location prompt
         │   │       ├── SplashActivity.java    # Launcher screen with the "Get started" button
         │   │       ├── RegisterActivity.java  # Create account: validation, strength hint, trust-device check box
         │   │       ├── LoginActivity.java     # Handshake step 1: username + password, lockout, audit, location
@@ -314,6 +343,10 @@ SecureAuthSimulator/
         │   │       ├── LoginHistoryActivity.java   # ListView + SimpleAdapter, date filter, CSV export/import
         │   │       ├── LoginMapActivity.java  # Google Map with green/red markers for located entries
         │   │       ├── TrustedDevicesActivity.java # ListView of phones, long-press Rename / Revoke
+        │   │       ├── ProfileActivity.java   # Username, member-since, issuer and a round photo from the camera or gallery
+        │   │       ├── SettingsActivity.java  # Spinners (digits, period, algorithm), time picker (auto-lock), location check box
+        │   │       ├── HelpActivity.java      # WebView with the offline help page and the RFC 6238 page
+        │   │       ├── HelpPages.java         # The only two web addresses the Help screen may open (pure logic)
         │   │       ├── InputRules.java        # Username/password rules and password-strength hint
         │   │       ├── AfterTextChangedListener.java # One-method TextWatcher helper
         │   │       ├── DateRange.java         # Turns picked days into start/end-of-day millisecond values
@@ -333,6 +366,9 @@ SecureAuthSimulator/
         │       │   ├── activity_login_history.xml   # Toolbar, filter button + chip, ListView, empty text
         │       │   ├── activity_login_map.xml       # Toolbar, map fragment, empty text, legend
         │       │   ├── activity_trusted_devices.xml # Toolbar, ListView, empty text
+        │       │   ├── activity_profile.xml         # Toolbar, round photo, Change photo button, three texts
+        │       │   ├── activity_settings.xml        # Three Spinners, warning, auto-lock button, location check box
+        │       │   ├── activity_help.xml            # Two buttons, progress bar, WebView, error text
         │       │   ├── dialog_backup_codes.xml      # Content of the "show codes once" dialog
         │       │   ├── dialog_rename_device.xml     # Content of the rename dialog (one text field)
         │       │   ├── item_history.xml             # One row of the history list
@@ -350,27 +386,34 @@ SecureAuthSimulator/
         │       ├── drawable/
         │       │   ├── ic_status_ok.xml             # Check-mark vector used for success rows
         │       │   ├── ic_status_fail.xml           # Cross vector used for failure rows
-        │       │   ├── ic_launcher_background.xml   # Launcher icon background (Android Studio default template)
-        │       │   └── ic_launcher_foreground.xml   # Launcher icon foreground (Android Studio default template)
-        │       ├── mipmap-anydpi/ic_launcher.xml, ic_launcher_round.xml  # Adaptive launcher icon definitions
-        │       ├── mipmap-mdpi|hdpi|xhdpi|xxhdpi|xxxhdpi/ic_launcher.webp, ic_launcher_round.webp  # Bitmap icons per density
+        │       │   ├── ic_avatar_placeholder.xml    # Head-and-shoulders picture shown before a photo is chosen
+        │       │   ├── ic_launcher_background.xml   # Launcher icon background: solid deep navy
+        │       │   ├── ic_launcher_foreground.xml   # Launcher icon foreground: a shield with a key
+        │       │   └── ic_launcher_monochrome.xml   # One-colour version for Android 13+ themed icons
+        │       ├── mipmap-anydpi/ic_launcher.xml, ic_launcher_round.xml  # Adaptive launcher icon definitions (the old bitmap icons were removed)
         │       └── xml/
-        │           ├── file_paths.xml               # FileProvider: only cache/qr may be shared
-        │           ├── backup_rules.xml             # Auto-backup rules for Android 11 and older (template, no rules)
-        │           └── data_extraction_rules.xml    # Cloud/device-transfer backup rules for Android 12+ (template, no rules)
+        │           ├── file_paths.xml               # FileProvider: only cache/qr and cache/camera may be reached
+        │           ├── backup_rules.xml             # Android 11 and older: exclude everything from backup
+        │           └── data_extraction_rules.xml    # Android 12+: exclude everything from cloud backup and device transfer
         ├── test/java/com/secureauth/simulator/     # Local unit tests: run on the computer, no phone
         │   ├── ExampleUnitTest.java                # Android Studio template test (2 + 2 = 4)
+        │   ├── ProjectRulesTest.java               # Keeps the hard rules enforced (allowed libraries, no logging, one session creator ...)
+        │   ├── ReleaseHygieneTest.java             # Manifest, git-ignore, signing, shrinking and icon checks
         │   ├── crypto/Base32Test.java              # RFC 4648 vectors, round trips, rejection of bad input
         │   ├── crypto/TotpEngineTest.java          # RFC 6238 vectors (SHA-1/SHA-256), +-1 window, otpauth link
         │   ├── crypto/PasswordHasherTest.java      # Verify/reject, salts differ, matches an independent PBKDF2
         │   ├── crypto/BackupCodeGeneratorTest.java # 10 unique codes, alphabet, hashing, normalising
         │   ├── data/SessionTokenTest.java          # Token is 32 random bytes; hash is SHA-256 in Base64
         │   ├── data/DeviceNameTest.java            # Device-name joining, cleaning and 1-40 length rule
+        │   ├── data/AppSettingsRulesTest.java      # Valid choices, defaults, auto-lock bounds, time-picker answer
+        │   ├── data/LoginHandshakeTest.java        # Stages, one user at a time, 10-minute expiry, clock going backwards
         │   ├── io/CsvTest.java                     # CSV escape/parse, line endings, BOM, formula guard
         │   ├── io/CsvImporterParseTest.java        # Header rules, bad rows counted, limits, export-import round trip
         │   ├── io/FileExporterTest.java            # Backup-code text and audit CSV format
+        │   ├── io/AvatarSizeTest.java              # Shrink factor, square side, "is this file inside the folder"
         │   ├── location/LocationHelperTest.java    # Haversine distances and the 100 km threshold
         │   ├── ui/BiometricSupportTest.java        # Authenticator choice and result mapping
+        │   ├── ui/HelpPagesTest.java               # Which web addresses the Help screen may open
         │   ├── ui/HistoryHelpersTest.java          # Location text, failure test, date-range maths
         │   ├── ui/InputRulesTest.java              # Username/password rules and strength
         │   └── ui/MapMarkersTest.java              # Which entries get which marker colour
@@ -384,8 +427,11 @@ SecureAuthSimulator/
             ├── data/LockoutManagerTest.java        # 3 strikes, 5 minutes, expiry, formatting
             ├── data/SessionManagerTest.java        # Session create/check/clear, auto-lock bounds
             ├── data/DeviceTrustTest.java           # Trust this phone once, revoked check, per-user separation
+            ├── data/AppSettingsDeviceTest.java     # Settings saved and read back, damaged values fall back to defaults
             ├── io/CsvImporterDeviceTest.java       # Import into a real DB, duplicates, size limit
             ├── io/FileExporterDeviceTest.java      # Writing through a ContentResolver
+            ├── io/AvatarStoreDeviceTest.java       # Photo becomes a 512 px square JPEG in private storage, rotation, transparency, safety
+            ├── io/TestImages.java                  # Helper that makes small test pictures
             ├── location/LocationHelperDeviceTest.java # Settings and permission state
             ├── views/CountdownRingViewTest.java    # Progress clamp, warning threshold, drawing, square size
             └── ui/                                 # Espresso screen tests
@@ -404,10 +450,17 @@ SecureAuthSimulator/
                 ├── LoginMapFlowTest.java           # One marker per located entry, legend
                 ├── RegisterTrustFlowTest.java      # Check box adds this phone to trusted devices
                 ├── RevokedDeviceLoginTest.java     # Revoked phone needs a backup code before the biometric step
-                └── TrustedDevicesFlowTest.java     # List, rename, revoke, warnings
+                ├── TrustedDevicesFlowTest.java     # List, rename, revoke, warnings
+                ├── ProfileFlowTest.java            # Profile texts, camera/gallery choices, saving and replacing the photo
+                ├── SettingsFlowTest.java           # Spinners, warning, time picker, check box, set up again
+                ├── HelpFlowTest.java               # Local page, RFC button, Back, blocked links, JavaScript off
+                ├── ReceiverFlowTest.java           # Airplane message, screen-off lock and its AUTO_LOCK row
+                ├── SecureScreenTest.java           # FLAG_SECURE on the secret screens and the codes dialog
+                ├── HandshakeGuardTest.java         # Every step refuses to open without the one before it
+                └── LauncherIconTest.java           # Adaptive icon with a themed layer
 ```
 
-Build output (`app/build`, `build/`) and the Android Studio folder `.idea/` are generated and ignored. The folder `app/src/main/assets` does **not** exist: the planned Help page (`help.html`) has not been written.
+Build output (`app/build`, `build/`) and the Android Studio folder `.idea/` are generated and ignored.
 
 ---
 
@@ -429,7 +482,7 @@ erDiagram
         TEXT username UK "lower case, 3 to 20 characters"
         TEXT password_hash "Base64 PBKDF2 output"
         TEXT salt "Base64 random 16 bytes"
-        TEXT avatar_uri "reserved, always empty today"
+        TEXT avatar_uri "path of the profile photo, may be empty"
         INTEGER failed_attempts "0 to 3"
         INTEGER locked_until "epoch ms, 0 means not locked"
         INTEGER created_at "epoch ms"
@@ -553,9 +606,12 @@ Besides the database the app keeps a few small things elsewhere:
 |---|---|---|---|
 | `SharedPreferences` file `secureauth_prefs` → `location_asked` | `true` once the location explanation was shown | `LocationHelper.markAsked` | `LocationHelper.wasAsked` |
 | same file → `trusted_device_id_<userId>` | Row id of *this phone* in `trusted_devices` | `DeviceTrust.trustCurrentDevice` | `DeviceTrust.currentDeviceId`, `isCurrentDeviceRevoked` |
-| same file → `auto_lock_ms` | Auto-lock time (1–30 min) | **nothing yet** (the Settings screen is not built) | `SessionManager.getAutoLockMs` (default 5 min) |
-| same file → `record_location` | "Record login location" switch | **nothing yet** (Settings not built) | `LocationHelper.isRecordingEnabled` (default on) |
+| same file → `auto_lock_ms` | Auto-lock time (1–30 min) | `AppSettings.setAutoLockMs` (Settings screen) | `AppSettings.getAutoLockMs` ← `SessionManager.getAutoLockMs` (default 5 min) |
+| same file → `record_location` | "Record login location" switch | `AppSettings.setRecordLocation` (Settings check box) | `AppSettings.isRecordLocation` ← `LocationHelper.isRecordingEnabled` (default on) |
+| same file → `totp_digits`, `totp_period`, `totp_algo` | Code length, period and algorithm for the NEXT enrollment | `AppSettings.setDigits/setPeriod/setAlgo` (Settings spinners) | `EnrollActivity.onCreate` (defaults 6, 30, `HmacSHA1`) |
 | App cache file `cache/qr/enroll_qr.png` | The QR image while sharing | `EnrollActivity.writeQrToCache` | other app via FileProvider; deleted in `EnrollActivity.onDestroy` |
+| App cache file `cache/camera/profile_capture.jpg` | The picture the camera app is writing | the camera app, through a FileProvider `Uri` from `ProfileActivity.launchCamera` | `ProfileActivity.onPhotoTaken`; deleted after copying |
+| App files `files/avatars/avatar_<userId>_<time>.jpg` | The saved profile photo (at most 512 px) | `AvatarStore.saveFrom` | `AvatarStore.load` (Profile, Dashboard toolbar); the old file is removed by `AvatarStore.delete` |
 
 ### 3.2 Table `users`
 
@@ -565,7 +621,7 @@ Besides the database the app keeps a few small things elsewhere:
 | `username` | TEXT NOT NULL UNIQUE | Lower-cased, trimmed name (3–20 chars); the UNIQUE rule is why `UserDao.insert` returns `-1` for a taken name |
 | `password_hash` | TEXT NOT NULL | Base64 of the 32-byte PBKDF2-HMAC-SHA256 result |
 | `salt` | TEXT NOT NULL | Base64 of the 16 random bytes mixed into that hash |
-| `avatar_uri` | TEXT (nullable) | Reserved for the profile photo (Phase 13); nothing writes it today |
+| `avatar_uri` | TEXT (nullable) | The full path of the profile photo inside the app's private `files/avatars/` folder; `NULL` until a photo is chosen (written by `UserDao.setAvatarUri`) |
 | `failed_attempts` | INTEGER DEFAULT 0 | Wrong steps in a row (password, TOTP, biometric, backup code share this one counter) |
 | `locked_until` | INTEGER DEFAULT 0 | Epoch ms until which the account is locked; `0` = not locked |
 | `created_at` | INTEGER NOT NULL | When the account was created |
@@ -574,8 +630,9 @@ Besides the database the app keeps a few small things elsewhere:
 |---|---|
 | `UserDao.insert` | Register → `RegisterActivity.createAccount` |
 | `UserDao.findByUsername` | Register → `createAccount` (name free?); Login → `LoginActivity.checkPassword` |
-| `UserDao.getById` | `LockoutManager.recordFailure`; TOTP → `loadScreenData`, `checkCode`; Backup recovery → `loadState`, `checkCode`; Enroll → `loadQrCode` (username for the QR); Dashboard → `loadData` (username); Backup codes → `generationWork` (username in the file text) |
+| `UserDao.getById` | `LockoutManager.recordFailure`; TOTP → `loadScreenData`, `checkCode`; Backup recovery → `loadState`, `checkCode`; Enroll → `loadQrCode` (username for the QR); Dashboard → `loadData` (username, photo path); Profile → `loadProfile`, `savePhoto`; Backup codes → `generationWork` (username in the file text) |
 | `UserDao.incrementFailedAttempts` / `resetFailedAttempts` / `setLockedUntil` | only through `LockoutManager` (used by Login, TOTP, Backup recovery, Biometric) |
+| `UserDao.setAvatarUri` | Profile → `ProfileActivity.savePhoto` |
 | `UserDao.list`, `update`, `delete` | tests only (no screen uses them) |
 
 ### 3.3 Table `totp_accounts`
@@ -592,7 +649,7 @@ Besides the database the app keeps a few small things elsewhere:
 | DAO method | Who calls it |
 |---|---|
 | `TotpAccountDao.replaceForUser` | Enroll → `EnrollActivity.saveAccount` (after the user typed a correct code) |
-| `TotpAccountDao.listForUser` | TOTP → `loadScreenData`; Dashboard → `loadData` |
+| `TotpAccountDao.listForUser` | TOTP → `loadScreenData`; Dashboard → `loadData`; Profile → `loadProfile` (issuer) |
 | `insert`, `getById`, `update`, `delete` | tests only |
 
 ### 3.4 Table `backup_codes`
@@ -662,7 +719,7 @@ Index: `idx_audit_log_user_ts` on `(user_id, ts)`, because every history screen 
 |---|---|
 | `SessionDao.deleteExpired`, `deleteForUser`, `insert` | `SessionManager.create` (Biometric → `completeLogin`) |
 | `SessionDao.findValid` | `SessionManager.check` (every protected screen via `BaseActivity.enforceSession`) |
-| `SessionDao.delete` | `BaseActivity.endSession` (logout, expiry) |
+| `SessionDao.delete` | `BaseActivity.endSession` (logout, expiry, screen-off lock) |
 | `getById`, `listForUser`, `update` | tests only |
 
 ### 3.8 Which screen touches which table (summary)
@@ -676,6 +733,8 @@ Index: `idx_audit_log_user_ts` on `(user_id, ts)`, because every history screen 
 | Backup recovery | users, backup_codes | users (counters), backup_codes (`used`), audit_log |
 | Biometric gate | audit_log (last login place) | users (counters), sessions, audit_log |
 | Dashboard | users, totp_accounts, sessions | sessions (logout), audit_log |
+| Profile | users, totp_accounts | users (`avatar_uri`) |
+| Settings | — (SharedPreferences only) | — |
 | Backup codes | users, backup_codes | backup_codes, audit_log |
 | Login history | audit_log | audit_log (CSV import) |
 | Login map | audit_log | — |
@@ -696,7 +755,7 @@ Section 4 has one sub-section for every component of the app. Each one follows t
 |---|---|---|
 | 4.1 | Crypto engine | `crypto/*` |
 | 4.2 | Data layer | `data/*` |
-| 4.3 | UI foundation and Splash | `BaseActivity`, `SplashActivity`, small helpers, theme |
+| 4.3 | UI foundation and Splash | `BaseActivity` (session guard, `FLAG_SECURE`, receivers), `SplashActivity`, small helpers, theme |
 | 4.4 | Registration and Login | `RegisterActivity`, `LoginActivity`, `InputRules` |
 | 4.5 | Enrollment and QR | `EnrollActivity`, `EnrollViewModel` |
 | 4.6 | TOTP verification and Dashboard (with custom views) | `TotpVerifyActivity`, `DashboardActivity`, `CountdownRingView` |
@@ -705,9 +764,14 @@ Section 4 has one sub-section for every component of the app. Each one follows t
 | 4.9 | Login history and CSV | `LoginHistoryActivity`, `io/*`, `DateRange`, `HistoryFormat` |
 | 4.10 | Location and Map | `LocationHelper`, `LoginMapActivity`, `MapMarkers` |
 | 4.11 | Trusted devices | `TrustedDevicesActivity`, `DeviceTrust` |
-| 4.12–4.15 | Profile, Settings, Help, Receivers | **not built yet** |
+| 4.12 | Profile (camera and gallery) | `ProfileActivity`, `io/AvatarStore` |
+| 4.13 | Settings | `SettingsActivity`, `AppSettings` |
+| 4.14 | Help (WebView) | `HelpActivity`, `HelpPages`, `assets/help.html` |
+| 4.15 | Broadcast receivers | `receiver/*`, registration in `BaseActivity` |
 | 4.16 | Build and release config | Gradle files, manifest, `res/xml` |
 | 4.17 | Tests | `src/test`, `src/androidTest` |
+| 4.18 | Login handshake guard | `LoginHandshake` and where each screen asks it |
+| 4.19 | Small methods not listed above | Empty private constructors and the inline text-watcher overrides |
 
 ### 4.1 Crypto engine
 
@@ -2260,8 +2324,8 @@ The data layer stores everything the app remembers in one SQLite file. `DbHelper
 |---|---|
 | Java | `app/src/main/java/com/secureauth/simulator/data/DbHelper.java`, models `User`, `TotpAccount`, `BackupCode`, `AuditLog`, `TrustedDevice`, `Session`; DAOs `UserDao`, `TotpAccountDao`, `BackupCodeDao`, `AuditLogDao`, `TrustedDeviceDao`, `SessionDao`; `AuditEvent`, `LockoutManager` (and `package-info.java`) |
 | Layouts / menus | none |
-| Resources | none; the file `secureauth.db` is created inside the app's private storage |
-| Not covered here | `SessionManager` (see [4.7](#47-biometric-and-sessions)) and `DeviceTrust` (see [4.11](#411-trusted-devices)) are also in `data/` |
+| Resources | none; the file `secureauth.db` is created inside the app's private storage (and, since the manifest sets `allowBackup="false"` with exclude-all rules, it is never copied into a backup) |
+| Not covered here | Also in `data/`: `SessionManager` ([4.7](#47-biometric-and-sessions)), `DeviceTrust` ([4.11](#411-trusted-devices)), `AppSettings` ([4.13](#413-settings)) and `LoginHandshake` ([4.18](#418-login-handshake-guard)) |
 
 #### c. Classes and methods
 
@@ -2494,6 +2558,8 @@ public final class AuditEvent {
     public static final String DEVICE_RENAMED = "DEVICE_RENAMED";
     public static final String DEVICE_REVOKED = "DEVICE_REVOKED";
 
+    public static final String AUTO_LOCK = "AUTO_LOCK";
+
     public static final String RESULT_SUCCESS = "SUCCESS";
     public static final String RESULT_FAIL = "FAIL";
     public static final String RESULT_WARNING = "WARNING";
@@ -2508,7 +2574,7 @@ public final class AuditEvent {
 
 ##### Class `UserDao` (table `users`)
 
-**File:** `app/src/main/java/com/secureauth/simulator/data/UserDao.java` (108 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/data/UserDao.java` (116 lines)
 
 The DAO pattern: every method opens a connection through the shared `DbHelper`, runs one parameterised query (`?` placeholders, never string concatenation of values) and converts rows to `User` objects.
 
@@ -2545,7 +2611,7 @@ public long insert(User user) {
 
 - **What it does:** Returns the user with that id, or `null`.
 - **Inputs → output:** id → `User` or `null`.
-- **Called by:** `LockoutManager.recordFailure`; `TotpVerifyActivity.loadScreenData` and `checkCode`; `BackupRecoveryActivity.loadState` and `checkCode`; `EnrollActivity.loadQrCode`; `DashboardActivity.loadData`; `BackupCodesActivity.generationWork`.
+- **Called by:** `LockoutManager.recordFailure`; `TotpVerifyActivity.loadScreenData` and `checkCode`; `BackupRecoveryActivity.loadState` and `checkCode`; `EnrollActivity.loadQrCode`; `DashboardActivity.loadData`; `ProfileActivity.loadProfile` and `savePhoto`; `BackupCodesActivity.generationWork`.
 - **Calls next:** `queryOne`.
 
 ```java
@@ -2663,6 +2729,24 @@ public void resetFailedAttempts(long id) {
 /** Pass 0 to clear the lock. */
 public void setLockedUntil(long id, long lockedUntil) {
     updateLong(id, "locked_until", lockedUntil);
+}
+```
+
+
+**Signature:** `public void setAvatarUri(long id, String avatarUri)`
+
+- **What it does:** Saves where the profile photo file is (pass `null` to clear it); the other columns are not touched.
+- **Inputs → output:** user id, path `String` or `null` → nothing.
+- **Called by:** `ProfileActivity.savePhoto` (background thread).
+- **Calls next:** `ContentValues.put`, `SQLiteDatabase.update`.
+
+```java
+/** Saves where the profile photo file is (pass null to clear it). Other columns stay as they are. */
+public void setAvatarUri(long id, String avatarUri) {
+    ContentValues values = new ContentValues();
+    values.put("avatar_uri", avatarUri);
+    helper.getWritableDatabase().update(
+            DbHelper.TABLE_USERS, values, "id = ?", new String[]{String.valueOf(id)});
 }
 ```
 
@@ -2832,7 +2916,7 @@ public TotpAccount getById(long id) {
 
 - **What it does:** All of the user's authenticators, oldest first (the app uses the first).
 - **Inputs → output:** userId → `List<TotpAccount>`.
-- **Called by:** `TotpVerifyActivity.loadScreenData`, `DashboardActivity.loadData`.
+- **Called by:** `TotpVerifyActivity.loadScreenData`, `DashboardActivity.loadData`, `ProfileActivity.loadProfile`.
 - **Calls next:** `fromCursor`.
 
 ```java
@@ -3221,7 +3305,7 @@ public int insertAll(List<AuditLog> rows) {
 
 - **What it does:** Shortcut for "an event happened now, with no location".
 - **Inputs → output:** userId, event name, result → id.
-- **Called by:** `RegisterActivity`, `EnrollActivity`, `TotpVerifyActivity`, `BackupRecoveryActivity`, `BackupCodesActivity`, `BiometricGateActivity`, `BaseActivity.endSession`, `LockoutManager.recordFailure`, `DeviceTrust.trustCurrentDevice`, `TrustedDevicesActivity`.
+- **Called by:** `RegisterActivity`, `EnrollActivity`, `TotpVerifyActivity`, `BackupRecoveryActivity`, `BackupCodesActivity`, `BiometricGateActivity`, `BaseActivity.endSession` (`LOGOUT`, `SESSION_EXPIRED`, `AUTO_LOCK`), `LockoutManager.recordFailure`, `DeviceTrust.trustCurrentDevice`, `TrustedDevicesActivity`.
 - **Calls next:** the longer `log`.
 
 ```java
@@ -4086,7 +4170,7 @@ public class DbHelper extends SQLiteOpenHelper {
 
 #### a. Purpose
 
-Every screen in the app extends one parent class, `BaseActivity`, which holds the behaviour all screens share: drawing edge to edge, protecting screens that need a login session, running slow work on a background thread, showing toasts and the "account locked" dialog, copying to the clipboard, and the optional location prompt. `SplashActivity` is the launcher screen. The theme (navy and teal, Material 3, light and dark) lives in `res/values`.
+Every screen in the app extends one parent class, `BaseActivity`, which holds the behaviour all screens share: drawing edge to edge, protecting screens that need a login session, blocking screenshots on screens that show secrets (`FLAG_SECURE`), listening for airplane mode and screen-off while a screen is visible, running slow work on a background thread, showing toasts and the "account locked" dialog, copying to the clipboard, and the optional location prompt. `SplashActivity` is the launcher screen. The theme (navy and teal, Material 3, light and dark) lives in `res/values`.
 
 #### b. Files involved
 
@@ -4103,9 +4187,9 @@ Every screen in the app extends one parent class, `BaseActivity`, which holds th
 
 ##### Class `BaseActivity` (abstract; parent of every screen)
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/BaseActivity.java` (278 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/BaseActivity.java` (362 lines)
 
-Three fields do most of the work:
+Four groups of fields do most of the work (the thread, the location helper and permission launcher, and the two receivers):
 
 ```java
 // One worker thread: database and PBKDF2 work run here so the UI never freezes
@@ -4118,15 +4202,20 @@ LocationHelper locationHelper;
 private final ActivityResultLauncher<String[]> locationPermissionLauncher = registerForActivityResult(
         new ActivityResultContracts.RequestMultiplePermissions(), result -> continueAfterLocationPermission());
 private Runnable afterLocationPermission;
+// ...
+// Broadcast receivers, registered while the screen is visible (see onStart / onStop)
+private final AirplaneModeReceiver airplaneModeReceiver = new AirplaneModeReceiver(this::handleAirplaneModeOn);
+private final ScreenOffReceiver screenOffReceiver = new ScreenOffReceiver(this::handleScreenOff);
+private boolean receiversRegistered;
 ```
 
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-- **What it does:** Calls the parent, then `EdgeToEdge.enable(this)` so the content is drawn behind the status and navigation bars (the default look on Android 15+).
+- **What it does:** Calls the parent, then `EdgeToEdge.enable(this)` so the content is drawn behind the status and navigation bars (the default look on Android 15+). If the screen says it is a *secure screen* (`isSecureScreen()`), it sets **`FLAG_SECURE`** on the window, which blocks screenshots and screen recording and blanks the screen's preview in the recent-apps list.
 - **Inputs → output:** saved state `Bundle` → nothing.
 - **Called by:** Android, when any screen is created (each subclass calls `super.onCreate` first).
-- **Calls next:** `AppCompatActivity.onCreate`, `EdgeToEdge.enable`.
+- **Calls next:** `AppCompatActivity.onCreate`, `EdgeToEdge.enable`, `isSecureScreen`, `Window.setFlags`.
 
 ```java
 @Override
@@ -4134,6 +4223,58 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     // Draw behind the status/navigation bars (this is the default look on Android 15+)
     EdgeToEdge.enable(this);
+    if (isSecureScreen()) {
+        // Blocks screenshots and screen recording of this window, and blanks its preview in
+        // the recent-apps list, so a code or secret cannot leak that way
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+    }
+}
+```
+
+
+**Signature:** `protected boolean isSecureScreen()`
+
+- **What it does:** Says whether this screen shows a code or a secret. The default is `false`; `DashboardActivity`, `EnrollActivity` and `BackupCodesActivity` override it to return `true`.
+- **Inputs → output:** nothing → `boolean`.
+- **Called by:** `onCreate`.
+- **Calls next:** nothing.
+
+```java
+/** Screens that show a code or a secret override this to return true (see FLAG_SECURE above). */
+protected boolean isSecureScreen() {
+    return false;
+}
+```
+
+
+**Signature:** `protected void onStart()`
+
+- **What it does:** When the screen becomes visible it registers the two broadcast receivers.
+- **Inputs → output:** nothing.
+- **Called by:** Android.
+- **Calls next:** `registerReceivers`.
+
+```java
+@Override
+protected void onStart() {
+    super.onStart();
+    registerReceivers();
+}
+```
+
+
+**Signature:** `protected void onStop()`
+
+- **What it does:** When the screen is hidden it removes the receivers again, so nothing listens while the app is not on screen.
+- **Inputs → output:** nothing.
+- **Called by:** Android.
+- **Calls next:** `unregisterReceivers`.
+
+```java
+@Override
+protected void onStop() {
+    super.onStop();
+    unregisterReceivers();
 }
 ```
 
@@ -4172,11 +4313,98 @@ protected void onDestroy() {
 ```
 
 
+**Signature:** `private void registerReceivers()`
+
+- **What it does:** Registers `AirplaneModeReceiver` (for `ACTION_AIRPLANE_MODE_CHANGED`) and `ScreenOffReceiver` (for `ACTION_SCREEN_OFF`) **in code**, with `RECEIVER_NOT_EXPORTED`: since Android 14 an app must say whether other apps may send to a receiver registered in code, and nobody else has any business sending these two broadcasts. A flag stops it registering twice.
+- **Inputs → output:** nothing.
+- **Called by:** `onStart`.
+- **Calls next:** `ContextCompat.registerReceiver` (twice).
+
+```java
+/**
+ * Listens for airplane mode and screen-off while this screen is visible. Both broadcasts come
+ * from Android itself, so the receivers are registered as NOT exported: since Android 14 an
+ * app must say whether other apps may send to a receiver registered in code, and nobody else
+ * has any business sending these.
+ */
+private void registerReceivers() {
+    if (receiversRegistered) {
+        return;
+    }
+    ContextCompat.registerReceiver(this, airplaneModeReceiver,
+            new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED);
+    ContextCompat.registerReceiver(this, screenOffReceiver,
+            new IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED);
+    receiversRegistered = true;
+}
+```
+
+
+**Signature:** `private void unregisterReceivers()`
+
+- **What it does:** Removes both receivers (only if they were registered).
+- **Inputs → output:** nothing.
+- **Called by:** `onStop`.
+- **Calls next:** `unregisterReceiver` (twice).
+
+```java
+private void unregisterReceivers() {
+    if (!receiversRegistered) {
+        return;
+    }
+    unregisterReceiver(airplaneModeReceiver);
+    unregisterReceiver(screenOffReceiver);
+    receiversRegistered = false;
+}
+```
+
+
+**Signature:** `void handleAirplaneModeOn()`
+
+- **What it does:** The airplane-mode receiver reports that airplane mode was just switched **on**: shows a `Snackbar` "Offline: TOTP still works — it only needs the clock" over the screen's content. Package-private so tests can call it.
+- **Inputs → output:** nothing.
+- **Called by:** `AirplaneModeReceiver` (through the listener given in the field initialiser); `ReceiverFlowTest`.
+- **Calls next:** `Snackbar.make(...).show()`.
+
+```java
+/** Airplane mode was just switched on: the codes do not need a network, say so. */
+void handleAirplaneModeOn() {
+    View content = findViewById(android.R.id.content);
+    if (content != null) {
+        Snackbar.make(content, R.string.airplane_mode_message, Snackbar.LENGTH_LONG).show();
+    }
+}
+```
+
+
+**Signature:** `void handleScreenOff()`
+
+- **What it does:** The screen turned off. A protected screen with a live session **locks at once**: the session is ended (memory and database row, with the audit event `AUTO_LOCK`) and Login opens on an empty back stack. Screens that need no session (such as Login or Help) do nothing.
+- **Inputs → output:** nothing.
+- **Called by:** `ScreenOffReceiver` (through its listener); `ReceiverFlowTest`.
+- **Calls next:** `requiresSession`, `SessionManager.isActive`, `endSession(AuditEvent.AUTO_LOCK)`, `goToLogin`.
+
+```java
+/**
+ * The screen turned off: a protected screen with a live session locks at once. The session is
+ * ended (memory and database row, AUTO_LOCK written to the audit log) and Login is opened on
+ * an empty back stack. Screens that need no session, such as Login itself, do nothing.
+ */
+void handleScreenOff() {
+    if (!requiresSession() || !SessionManager.getInstance().isActive(System.currentTimeMillis())) {
+        return;
+    }
+    endSession(AuditEvent.AUTO_LOCK);
+    goToLogin();
+}
+```
+
+
 **Signature:** `protected boolean requiresSession()`
 
 - **What it does:** Says whether this screen needs a logged-in session. The default is `false`; screens that show codes or secrets override it to return `true`.
 - **Inputs → output:** nothing → `boolean`.
-- **Called by:** `enforceSession`. Overridden in `DashboardActivity`, `BackupCodesActivity`, `LoginHistoryActivity`, `LoginMapActivity`, `TrustedDevicesActivity`.
+- **Called by:** `enforceSession`. Overridden in `DashboardActivity`, `BackupCodesActivity`, `LoginHistoryActivity`, `LoginMapActivity`, `TrustedDevicesActivity`, `ProfileActivity`, `SettingsActivity`.
 - **Calls next:** nothing.
 
 ```java
@@ -4191,7 +4419,7 @@ protected boolean requiresSession() {
 
 - **What it does:** For protected screens: asks `SessionManager.check` whether the session is active. If not, ends it (writing `SESSION_EXPIRED` when it simply timed out), shows a "session expired" toast and sends the user to Login. Returns whether the screen may stay open.
 - **Inputs → output:** nothing → `true` if allowed, `false` if the user was sent to Login.
-- **Called by:** `onResume`; the `onCreate` of `DashboardActivity`, `BackupCodesActivity`, `LoginHistoryActivity`, `LoginMapActivity`, `TrustedDevicesActivity` (they stop if it returns `false`); `DashboardActivity.onStart` and its once-a-second `tick`.
+- **Called by:** `onResume`; the `onCreate` of `DashboardActivity`, `BackupCodesActivity`, `LoginHistoryActivity`, `LoginMapActivity`, `TrustedDevicesActivity`, `ProfileActivity`, `SettingsActivity` (they stop if it returns `false`); `DashboardActivity.onStart` and its once-a-second `tick`.
 - **Calls next:** `requiresSession`, `SessionManager.check`, `endSession`, `showToast`, `goToLogin`.
 
 ```java
@@ -4224,10 +4452,10 @@ protected boolean enforceSession() {
 
 **Signature:** `protected void endSession(@Nullable String auditEvent)`
 
-- **What it does:** Ends the session: clears the token in memory straight away, then (in the background) deletes the database row and writes the audit entry (`LOGOUT` or `SESSION_EXPIRED`) if one was given.
+- **What it does:** Ends the session: forgets the login-handshake progress, clears the token in memory straight away, then (in the background) deletes the database row and writes the audit entry (`LOGOUT`, `SESSION_EXPIRED` or `AUTO_LOCK`) if one was given.
 - **Inputs → output:** audit event name or `null` → nothing.
-- **Called by:** `enforceSession`; `DashboardActivity.logout`.
-- **Calls next:** `SessionManager.clear`, `runInBackground`, `SessionDao.delete`, `AuditLogDao.log`.
+- **Called by:** `enforceSession`; `handleScreenOff`; `DashboardActivity.logout`.
+- **Calls next:** `LoginHandshake.clear`, `SessionManager.clear`, `runInBackground`, `SessionDao.delete`, `AuditLogDao.log`.
 
 ```java
 /**
@@ -4235,6 +4463,7 @@ protected boolean enforceSession() {
  * background) deletes its database row and writes the audit entry, if one is given.
  */
 protected void endSession(@Nullable String auditEvent) {
+    LoginHandshake.getInstance().clear();
     SessionManager.Snapshot ended = SessionManager.getInstance().clear();
     if (ended == null) {
         return;
@@ -4350,7 +4579,7 @@ protected void withCurrentLocation(Consumer<Location> next) {
 
 - **What it does:** Opens Login on a cleared back stack (`NEW_TASK | CLEAR_TASK`), so Back cannot return to a protected screen, and finishes this screen.
 - **Inputs → output:** nothing.
-- **Called by:** `enforceSession`; `DashboardActivity.logout`.
+- **Called by:** `enforceSession`; `handleScreenOff`; `DashboardActivity.logout`.
 - **Calls next:** `startActivity` (explicit Intent to `LoginActivity`), `finish`.
 
 ```java
@@ -4520,7 +4749,7 @@ protected void showToast(String message) {
 
 ##### Class `SplashActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/SplashActivity.java` (28 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/SplashActivity.java` (34 lines)
 
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
@@ -4704,6 +4933,7 @@ The theme parent `Theme.Material3.DayNight.NoActionBar` switches between light a
 | Unit 2 — simple controls | `TextView`, `MaterialButton` | `activity_splash.xml`, `SplashActivity.onCreate` | Logo text and the Get started button |
 | Unit 2 — toasts | `Toast` | `BaseActivity.showToast` | Short feedback messages used by all screens |
 | Unit 2 — pop-up dialogs | `MaterialAlertDialogBuilder` (AlertDialog) | `BaseActivity.showLockDialog`, `ensureLocationPermission` | "Account locked" and the location explanation |
+| **Lab 10** — broadcast receiver | `BroadcastReceiver`, `IntentFilter`, `ContextCompat.registerReceiver` with `RECEIVER_NOT_EXPORTED`, `Snackbar` | `BaseActivity.registerReceivers`, `handleAirplaneModeOn`, `handleScreenOff` ([4.15](#415-broadcast-receivers)) | Airplane-mode message and screen-off lock |
 | Unit 2 — multiscreen apps · Lab 3 explicit Intent · CO1 | Explicit `Intent` | `SplashActivity.onCreate`, `BaseActivity.goToLogin` | Splash → Login; any protected screen → Login |
 | Rubric 3 — Material Design | Material 3 DayNight theme, dark mode | `themes.xml`, `colors.xml`, `values-night/colors.xml` | Consistent look in light and dark mode |
 
@@ -4713,6 +4943,7 @@ The theme parent `Theme.Material3.DayNight.NoActionBar` switches between light a
 - One rule is: "if this screen needs a login and you do not have a valid one, go back to Login" — so we write it once, not twelve times.
 - Another is: "slow jobs (hashing, database) must run on a helper thread, then hand the answer back to the screen", which stops the app freezing.
 - Another is "show short messages with a Toast and important warnings with a dialog".
+- Screens that show a code or a secret are marked as *secure*, so Android refuses to take screenshots of them; and every screen listens (while visible) for "screen turned off", which locks the app at once.
 - The Splash screen is just a title and one button that opens Login.
 
 #### g. Likely viva questions
@@ -4727,7 +4958,7 @@ The theme parent `Theme.Material3.DayNight.NoActionBar` switches between light a
 
 #### a. Purpose
 
-`RegisterActivity` creates an account (unique username, password of at least 8 characters with a live strength hint, and an optional "Trust this device" check box). `LoginActivity` is **step 1 of the handshake**: it checks the password, counts failures toward the 3-strike lockout, optionally records where the login happened, and then opens the TOTP screen. Passwords are never stored — only salted PBKDF2 hashes.
+`RegisterActivity` creates an account (unique username, password of at least 8 characters with a live strength hint, and an optional "Trust this device" check box). `LoginActivity` is **step 1 of the handshake**: it checks the password, counts failures toward the 3-strike lockout, optionally records where the login happened, tells the in-memory `LoginHandshake` that step 1 passed, and then opens the TOTP screen. Passwords are never stored — only salted PBKDF2 hashes.
 
 #### b. Files involved
 
@@ -4736,7 +4967,7 @@ The theme parent `Theme.Material3.DayNight.NoActionBar` switches between light a
 | Java | `app/src/main/java/com/secureauth/simulator/ui/RegisterActivity.java`, `app/src/main/java/com/secureauth/simulator/ui/LoginActivity.java`, `app/src/main/java/com/secureauth/simulator/ui/InputRules.java` (uses `AfterTextChangedListener`, `BaseActivity`) |
 | Layouts | `app/src/main/res/layout/activity_register.xml`, `app/src/main/res/layout/activity_login.xml` |
 | Resources | `strings.xml` (Login, Register, Shared form fields groups), `themes.xml` text appearances |
-| Uses | `PasswordHasher`, `UserDao`, `AuditLogDao`, `LockoutManager`, `DeviceTrust`, `TrustedDeviceDao` |
+| Uses | `PasswordHasher`, `UserDao`, `AuditLogDao`, `LockoutManager`, `LoginHandshake`, `DeviceTrust`, `TrustedDeviceDao` |
 
 #### c. Classes and methods
 
@@ -4839,7 +5070,7 @@ public static Strength strength(char[] password) {
 
 ##### Class `RegisterActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/RegisterActivity.java` (190 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/RegisterActivity.java` (192 lines)
 
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
@@ -4971,10 +5202,10 @@ private void onRegisterClicked() {
 
 **Signature:** `private long createAccount(String username, char[] password, boolean trustThisDevice)`
 
-- **What it does:** **Background thread.** Checks the name is free, hashes the password (PBKDF2, also wiping the array), inserts the user, writes a `REGISTER` audit row and, if the box was ticked, adds this phone to the trusted devices. Returns the new id, or `-1` if the name was taken.
+- **What it does:** **Background thread.** Checks the name is free, hashes the password (PBKDF2, also wiping the array), inserts the user, writes a `REGISTER` audit row, tells `LoginHandshake` that this account has just been registered (so enrollment may open for it) and, if the box was ticked, adds this phone to the trusted devices. Returns the new id, or `-1` if the name was taken.
 - **Inputs → output:** username, password `char[]`, check-box value → new user id or `USERNAME_TAKEN` (−1).
 - **Called by:** `onRegisterClicked` (through `runInBackground`).
-- **Calls next:** `UserDao.findByUsername`, `PasswordHasher.hash`, `UserDao.insert`, `AuditLogDao.log`, `DeviceTrust.trustCurrentDevice`.
+- **Calls next:** `UserDao.findByUsername`, `PasswordHasher.hash`, `UserDao.insert`, `AuditLogDao.log`, `LoginHandshake.registered`, `DeviceTrust.trustCurrentDevice`.
 
 ```java
 /**
@@ -4999,6 +5230,7 @@ private long createAccount(String username, char[] password, boolean trustThisDe
         return USERNAME_TAKEN; // someone took it between the check and the insert
     }
     auditDao.log(userId, AuditEvent.REGISTER, AuditEvent.RESULT_SUCCESS);
+    LoginHandshake.getInstance().registered(userId, System.currentTimeMillis()); // enrollment may open for this account
     if (trustThisDevice) {
         DeviceTrust.trustCurrentDevice(getApplicationContext(), deviceDao, auditDao, userId);
     }
@@ -5055,7 +5287,7 @@ private void setBusy(boolean busy) {
 
 ##### Class `LoginActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/LoginActivity.java` (190 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/LoginActivity.java` (200 lines)
 
 The activity-result launcher that opens Register and receives the new username (the modern replacement for `startActivityForResult`):
 
@@ -5131,6 +5363,23 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
 ```
 
 
+**Signature:** `protected void onResume()`
+
+- **What it does:** Every time Login is shown (also when the user comes back from a later step or cancels it) the whole login progress is forgotten: `LoginHandshake.clear()`. A login therefore always starts from the password.
+- **Inputs → output:** nothing.
+- **Called by:** Android.
+- **Calls next:** `LoginHandshake.clear`.
+
+```java
+@Override
+protected void onResume() {
+    super.onResume();
+    // Back at the first step (also after cancelling a later one): whatever was reached is forgotten
+    LoginHandshake.getInstance().clear();
+}
+```
+
+
 **Signature:** `private void onLoginClicked()`
 
 - **What it does:** Checks both fields are non-empty (inline errors), wipes that temporary password copy, disables the button, then — first time only — explains and asks about location, looks up the place if allowed, and starts the password check.
@@ -5184,10 +5433,10 @@ private void startPasswordCheck(String username, @Nullable Location location) {
 
 **Signature:** `private Outcome checkPassword(String username, char[] password, Double lat, Double lng)`
 
-- **What it does:** **Background thread — the whole password step.** Unknown user: still hashes a dummy password so the time is the same. Locked user: returns `LOCKED` without even looking at the password. Correct password: writes `PASSWORD_OK` (with the place) and returns `OK` — **without resetting the failure counter**. Wrong password: writes `PASSWORD_FAIL`, counts the failure, and returns `LOCKED` on the third.
+- **What it does:** **Background thread — the whole password step.** Unknown user: still hashes a dummy password so the time is the same. Locked user: returns `LOCKED` without even looking at the password. Correct password: writes `PASSWORD_OK` (with the place), records `LoginHandshake.passwordAccepted(userId, now)` and returns `OK` — **without resetting the failure counter**. Wrong password: writes `PASSWORD_FAIL`, counts the failure, and returns `LOCKED` on the third.
 - **Inputs → output:** username, password, lat, lng → `Outcome`.
 - **Called by:** `startPasswordCheck` (through `runInBackground`).
-- **Calls next:** `UserDao.findByUsername`, `PasswordHasher.verify`, `LockoutManager.clearExpiredLock/remainingLockMs/recordFailure`, `AuditLogDao.log(..., lat, lng)`.
+- **Calls next:** `UserDao.findByUsername`, `PasswordHasher.verify`, `LockoutManager.clearExpiredLock/remainingLockMs/recordFailure`, `AuditLogDao.log(..., lat, lng)`, `LoginHandshake.passwordAccepted`.
 
 ```java
 /** Background thread: the whole password step, including lockout and audit rows. */
@@ -5213,6 +5462,8 @@ private Outcome checkPassword(String username, char[] password, Double lat, Doub
         // accepted; otherwise someone who knows the password could log in again to get fresh
         // attempts at the 6-digit code every time.
         auditDao.log(user.id, AuditEvent.PASSWORD_OK, AuditEvent.RESULT_SUCCESS, lat, lng);
+        // Step 1 is done and proven in memory: the code step will refuse to open without this
+        LoginHandshake.getInstance().passwordAccepted(user.id, now);
         return new Outcome(Status.OK, user.id, 0);
     }
 
@@ -5417,7 +5668,7 @@ The root of both screens is a `ScrollView` (so the form scrolls above the keyboa
 - Logging in: the app scrambles what you typed the same way and compares. Wrong? It counts a mistake. Three mistakes and the account is locked for five minutes.
 - The message for "no such user" and "wrong password" is identical on purpose, and for an unknown name the app does the same slow scrambling anyway, so an attacker cannot tell which usernames exist.
 - The slow scrambling runs on a helper thread so the screen does not freeze.
-- A correct password does not log you in; it only opens the next door (the code check).
+- A correct password does not log you in; it only opens the next door (the code check). The app also remembers, in memory, that you passed this door, and the next screen refuses to open without that memory.
 
 #### g. Likely viva questions
 
@@ -5431,7 +5682,7 @@ The root of both screens is a `ScrollView` (so the form scrolls above the keyboa
 
 #### a. Purpose
 
-Enrollment links an authenticator app (such as Google Authenticator) to the account. `EnrollActivity` makes a fresh random secret, shows it as a **QR code** and as grouped Base32 text, and asks the user to type the code their authenticator shows. Only when `TotpEngine.verify` accepts that code is the secret **encrypted with the Android Keystore and saved**. A long-press on the QR offers *Copy secret* and *Share QR image* (an implicit Intent through a `FileProvider`).
+Enrollment links an authenticator app (such as Google Authenticator) to the account. `EnrollActivity` makes a fresh random secret, shows it as a **QR code** and as grouped Base32 text, and asks the user to type the code their authenticator shows. The code length, period and algorithm follow the choices saved in Settings (defaults: 6 digits, 30 seconds, SHA-1, which Google Authenticator expects). The screen opens only right after registering, after a correct password for that account, or from a live session of the same user. Only when `TotpEngine.verify` accepts that code is the secret **encrypted with the Android Keystore and saved**. A long-press on the QR offers *Copy secret* and *Share QR image* (an implicit Intent through a `FileProvider`).
 
 #### b. Files involved
 
@@ -5442,8 +5693,8 @@ Enrollment links an authenticator app (such as Google Authenticator) to the acco
 | Menu | `app/src/main/res/menu/context_enroll_qr.xml` (long-press menu on the QR) |
 | Resources | `app/src/main/res/xml/file_paths.xml` (what the FileProvider may share), `strings.xml` (Enroll group); `AndroidManifest.xml` `<provider>` for `androidx.core.content.FileProvider` |
 | Libraries | ZXing (`BarcodeEncoder`), AndroidX `FileProvider`, `ViewModel` |
-| Uses | `TotpEngine`, `Base32`, `KeystoreHelper`, `TotpAccountDao`, `UserDao`, `AuditLogDao` |
-| Opened by | `RegisterActivity.onRegisterFinished`; `TotpVerifyActivity.onLoaded` (user has no authenticator yet); `BackupRecoveryActivity.onChecked` (re-enroll path) |
+| Uses | `TotpEngine`, `Base32`, `KeystoreHelper`, `TotpAccountDao`, `UserDao`, `AuditLogDao`, `AppSettings`, `LoginHandshake`, `SessionManager` |
+| Opened by | `RegisterActivity.onRegisterFinished`; `TotpVerifyActivity.onLoaded` (user has no authenticator yet); `BackupRecoveryActivity.onChecked` (re-enroll path); `SettingsActivity.confirmSetupAgain` |
 
 #### c. Classes and methods
 
@@ -5509,15 +5760,15 @@ boolean confirming;
 
 ##### Class `EnrollActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/EnrollActivity.java` (289 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/EnrollActivity.java` (316 lines)
 
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-- **What it does:** Reads `EXTRA_USER_ID` (finishes if missing), builds the screen, gets the `EnrollViewModel`, shows the secret in groups of four, restores the "confirm" section after a rotation, starts drawing the QR, wires the buttons and registers the QR image for a **context menu**.
+- **What it does:** Reads `EXTRA_USER_ID` (finishes if missing). **Guard:** `LoginHandshake.allowsEnroll(userId, now)` (just registered, or password step passed) **or** a live session of the same user (`SessionManager.getUserId() == userId`); otherwise it goes to Login. Reads the saved digits, period and algorithm from `AppSettings` into the `settings` object, builds the screen (the prompt text, the hint and the input length depend on the digit count), gets the `EnrollViewModel`, shows the secret in groups of four, restores the "confirm" section after a rotation, starts drawing the QR, wires the buttons and registers the QR image for a **context menu**.
 - **Inputs → output:** saved state → nothing.
-- **Called by:** Android, after one of the three callers above starts this screen with `EXTRA_USER_ID`.
-- **Calls next:** `groupInFours`, `showConfirmSection`, `loadQrCode`, `copySecret`, `onConfirmClicked`, `registerForContextMenu`.
+- **Called by:** Android, after one of the callers above starts this screen with `EXTRA_USER_ID`.
+- **Calls next:** `LoginHandshake.allowsEnroll`, `SessionManager.getUserId`, `goToLogin`, `AppSettings.getDigits/getPeriod/getAlgo`, `groupInFours`, `showConfirmSection`, `loadQrCode`, `copySecret`, `onConfirmClicked`, `registerForContextMenu`.
 
 ```java
 @Override
@@ -5528,10 +5779,28 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
         finish(); // started without a user: nothing to enroll
         return;
     }
+    // Replacing an authenticator is sensitive: only right after registering, after a correct
+    // password, or from a logged-in session of the same user (Settings)
+    long now = System.currentTimeMillis();
+    boolean allowed = LoginHandshake.getInstance().allowsEnroll(userId, now)
+            || SessionManager.getInstance().getUserId() == userId;
+    if (!allowed) {
+        goToLogin();
+        return;
+    }
+
+    settings.digits = AppSettings.getDigits(this);
+    settings.period = AppSettings.getPeriod(this);
+    settings.algo = AppSettings.getAlgo(this);
 
     binding = ActivityEnrollBinding.inflate(getLayoutInflater());
     setContentView(binding.getRoot());
     applySystemBarPadding(binding.enrollRoot);
+    // The text and the length limit depend on the chosen number of digits
+    binding.textConfirmPrompt.setText(getString(R.string.enroll_confirm_prompt, settings.digits));
+    binding.layoutCode.setHint(getString(R.string.hint_code, settings.digits));
+    binding.inputCode.setFilters(new android.text.InputFilter[]{
+            new android.text.InputFilter.LengthFilter(settings.digits)});
 
     DbHelper db = DbHelper.getInstance(this);
     userDao = new UserDao(db);
@@ -5558,6 +5827,21 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
 
     // Long-press on the QR opens the context menu (Copy secret / Share QR image)
     registerForContextMenu(binding.imageQr);
+}
+```
+
+
+**Signature:** `protected boolean isSecureScreen()`
+
+- **What it does:** This screen shows the QR code and the secret in text, so it is a **secure screen**: `BaseActivity.onCreate` sets `FLAG_SECURE` (no screenshots, blank recent-apps preview).
+- **Inputs → output:** nothing → `true`.
+- **Called by:** `BaseActivity.onCreate`.
+- **Calls next:** nothing.
+
+```java
+@Override
+protected boolean isSecureScreen() {
+    return true; // shows the QR code and the secret in text
 }
 ```
 
@@ -5785,7 +6069,7 @@ private void showConfirmSection(boolean visible) {
 
 **Signature:** `private void onConfirmClicked()`
 
-- **What it does:** Checks the typed text is exactly 6 digits, then asks `TotpEngine.verify` (±1 window). A wrong code shows an error and writes `ENROLL_VERIFY_FAIL`. A correct one starts saving.
+- **What it does:** Checks the typed text is exactly `settings.digits` digits, then asks `TotpEngine.verify` (±1 window) with the chosen digits, period and algorithm. A wrong code shows an error and writes `ENROLL_VERIFY_FAIL`. A correct one starts saving.
 - **Inputs → output:** nothing (reads `inputCode`) → continues or shows an error.
 - **Called by:** the **Confirm** button.
 - **Calls next:** `EnrollViewModel.copySecret`, `TotpEngine.verify`, `AuditLogDao.log`, `runInBackground(saveAccount, onSaveFinished)`.
@@ -5794,7 +6078,7 @@ private void showConfirmSection(boolean visible) {
 private void onConfirmClicked() {
     String code = String.valueOf(binding.inputCode.getText()).trim();
     if (!code.matches("\\d{" + settings.digits + "}")) {
-        binding.layoutCode.setError(getString(R.string.error_code_length));
+        binding.layoutCode.setError(getString(R.string.error_code_length, settings.digits));
         return;
     }
 
@@ -5817,7 +6101,7 @@ private void onConfirmClicked() {
 
 **Signature:** `private boolean saveAccount(byte[] secret)`
 
-- **What it does:** **Background thread.** Encrypts the secret with the Keystore, builds the `TotpAccount` (issuer `SecureAuth`, 6 digits, 30 s, `HmacSHA1`), replaces any older account in one transaction and writes `TOTP_ENROLLED`. Always wipes the secret copy.
+- **What it does:** **Background thread.** Encrypts the secret with the Keystore, builds the `TotpAccount` (issuer `SecureAuth` and the digits, period and algorithm of `settings`: by default 6, 30 s, `HmacSHA1`), replaces any older account in one transaction and writes `TOTP_ENROLLED`. Always wipes the secret copy.
 - **Inputs → output:** secret bytes → `true` if saved.
 - **Called by:** `onConfirmClicked`.
 - **Calls next:** `KeystoreHelper.encrypt`, `TotpAccountDao.replaceForUser`, `AuditLogDao.log`.
@@ -5888,11 +6172,15 @@ private void onSaveFinished(boolean saved) {
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the cache/qr folder can be shared through FileProvider, nothing else in app storage -->
+<!-- Only cache/qr (the QR image we share) and cache/camera (where the camera app writes the
+     profile photo) can be reached through FileProvider, nothing else in app storage -->
 <paths>
     <cache-path
         name="qr"
         path="qr/" />
+    <cache-path
+        name="camera"
+        path="camera/" />
 </paths>
 ```
 
@@ -5946,6 +6234,7 @@ Key parts of `activity_enroll.xml` — the QR `ImageView` sits on a white backgr
 | Unit 2 / Lab 3 — **implicit Intent** | `Intent.ACTION_SEND` + chooser | `EnrollActivity.shareQrImage` | "Send an image"; Android shows the apps that can handle it |
 | Unit 2 — pop-up dialogs | `AlertDialog` | `EnrollActivity.confirmShareQr` | Warning before sharing the secret |
 | Unit 2 — toasts | `Toast` | `copySecret`, `onSaveFinished` | "Secret copied", "Authenticator set up" |
+| Self-learning (rubric 2) | `FLAG_SECURE` window flag | `EnrollActivity.isSecureScreen`, `BaseActivity.onCreate` | Blocks screenshots of the QR and the secret |
 | Unit 2 — simple controls | `TextInputEditText`, `MaterialButton`, `TextView` | `activity_enroll.xml` | Confirm-code box, Copy, "I've scanned it" |
 | Self-learning (rubric 2) | ZXing QR, Android Keystore, `ViewModel`, `FileProvider` | `loadQrCode`, `saveAccount`, `EnrollViewModel` | New concepts beyond the syllabus |
 | Unit 6 SQLite · CO3 | `TotpAccountDao.replaceForUser` | `EnrollActivity.saveAccount` | Saves the encrypted secret |
@@ -5957,6 +6246,8 @@ Key parts of `activity_enroll.xml` — the QR `ImageView` sits on a white backgr
 - The secret is locked with a key from the phone's Keystore before it is saved. The database never contains the readable secret.
 - If you long-press the QR you can copy the secret or send the picture to another app — but the app warns you first, because whoever has the picture can make your codes.
 - A ViewModel keeps the same secret alive if you rotate the phone, so the QR does not change halfway.
+- Android is told not to allow screenshots of this screen, because the QR *is* the secret.
+- If you chose 8 digits or 60 seconds in Settings, the QR and the confirmation follow those choices; Google Authenticator may not support them.
 
 #### g. Likely viva questions
 
@@ -5970,7 +6261,7 @@ Key parts of `activity_enroll.xml` — the QR `ImageView` sits on a white backgr
 
 #### a. Purpose
 
-`TotpVerifyActivity` is **step 2 of the handshake**: the user types the 6-digit code from their authenticator; the screen decrypts the stored secret, asks `TotpEngine.verify`, and counts wrong codes toward the same 3-strike lockout. `DashboardActivity` is the home screen after a full login: it shows the **live code** for the user's own secret, a **ring that counts down** to the next code (the custom `CountdownRingView`), tap-to-copy, pull-to-refresh and the options menu.
+`TotpVerifyActivity` is **step 2 of the handshake**: it refuses to open unless the password step really passed (`LoginHandshake`); the user types the code from their authenticator; the screen decrypts the stored secret, asks `TotpEngine.verify`, and counts wrong codes toward the same 3-strike lockout. `DashboardActivity` is the home screen after a full login: it shows the **live code** for the user's own secret, a **ring that counts down** to the next code (the custom `CountdownRingView`), tap-to-copy, pull-to-refresh, the profile photo as a round icon in the toolbar and the options menu. It is a *secure screen*: Android blocks screenshots of it.
 
 #### b. Files involved
 
@@ -5980,14 +6271,14 @@ Key parts of `activity_enroll.xml` — the QR `ImageView` sits on a white backgr
 | Layouts | `app/src/main/res/layout/activity_totp_verify.xml`, `app/src/main/res/layout/activity_dashboard.xml` |
 | Menu | `app/src/main/res/menu/menu_dashboard.xml` (options menu) |
 | Resources | `strings.xml` (TOTP verify, Dashboard groups); `themes.xml` (`TextAppearance.SecureAuth.Code` monospace style) |
-| Uses | `KeystoreHelper`, `TotpEngine`, `LockoutManager`, `DeviceTrust`, `SessionManager`, DAOs |
+| Uses | `KeystoreHelper`, `TotpEngine`, `LockoutManager`, `LoginHandshake`, `DeviceTrust`, `SessionManager`, `AvatarStore`, DAOs |
 | Opened by | `TotpVerifyActivity` ← `LoginActivity.onCheckFinished`; `DashboardActivity` ← `BiometricGateActivity.completeLogin` |
 
 #### c. Classes and methods
 
 ##### Class `TotpVerifyActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/TotpVerifyActivity.java` (277 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/TotpVerifyActivity.java` (288 lines)
 
 Three activity-result launchers let this screen open other screens and wait for their answer:
 
@@ -6059,10 +6350,10 @@ Loaded(User user, TotpAccount account) {
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-- **What it does:** Reads `EXTRA_USER_ID` (finishes if missing), builds the screen and DAOs, and adds a text watcher: **the moment the last digit is typed the code is submitted automatically**. Wires the *Use a backup code instead* button to open `BackupRecoveryActivity` (with the user id) and loads the data.
+- **What it does:** Reads `EXTRA_USER_ID` (finishes if missing) and **asks `LoginHandshake.allowsCodeStep`**; if the password step has not passed for this user (or went stale), it goes to Login. Then builds the screen and DAOs and adds a text watcher: **the moment the last digit is typed the code is submitted automatically**. Wires the *Use a backup code instead* button to open `BackupRecoveryActivity` (with the user id) and loads the data.
 - **Inputs → output:** saved state → nothing.
 - **Called by:** Android, after `LoginActivity.onCheckFinished` starts it with `EXTRA_USER_ID`.
-- **Calls next:** `ActivityTotpVerifyBinding.inflate`, `submit`, `recoveryLauncher.launch`, `loadScreenData`.
+- **Calls next:** `LoginHandshake.allowsCodeStep`, `goToLogin`, `ActivityTotpVerifyBinding.inflate`, `submit`, `recoveryLauncher.launch`, `loadScreenData`.
 
 ```java
 @Override
@@ -6071,6 +6362,11 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
     userId = getIntent().getLongExtra(EXTRA_USER_ID, -1L);
     if (userId < 0) {
         finish();
+        return;
+    }
+    // The user id arrives in an Intent, which proves nothing. Step 1 must really have passed.
+    if (!LoginHandshake.getInstance().allowsCodeStep(userId, System.currentTimeMillis())) {
+        goToLogin();
         return;
     }
 
@@ -6257,14 +6553,19 @@ private void continueAfterCodeStep() {
 
 **Signature:** `private void goToBiometricGate()`
 
-- **What it does:** Step 3 (explicit Intent with `EXTRA_USER_ID`) and finishes this screen so Back cannot return to it.
+- **What it does:** Records that step 2 is done with `LoginHandshake.codeAccepted` (this works only right after step 1 for the same user; if the password step went stale it goes back to Login), then starts step 3 (explicit Intent with `EXTRA_USER_ID`) and finishes this screen so Back cannot return to it.
 - **Inputs → output:** nothing.
 - **Called by:** `continueAfterCodeStep`; the `revokedDeviceLauncher` callback (`RESULT_OK`).
-- **Calls next:** `startActivity(BiometricGateActivity)`, `finish`.
+- **Calls next:** `LoginHandshake.codeAccepted`, `goToLogin`, `startActivity(BiometricGateActivity)`, `finish`.
 
 ```java
 /** Step 3 of the handshake (explicit Intent). This screen is finished, so Back cannot return here. */
 private void goToBiometricGate() {
+    // Record that step 2 is done (this only works right after step 1 for the same user)
+    if (!LoginHandshake.getInstance().codeAccepted(userId, System.currentTimeMillis())) {
+        goToLogin(); // the password step went stale while the code was being entered: start over
+        return;
+    }
     startActivity(new Intent(this, BiometricGateActivity.class)
             .putExtra(BiometricGateActivity.EXTRA_USER_ID, userId));
     finish();
@@ -6309,7 +6610,7 @@ private void onChecked(Outcome outcome) {
 
 ##### Class `DashboardActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/DashboardActivity.java` (285 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/DashboardActivity.java` (328 lines)
 
 The once-a-second timer (`tick`) is a `Runnable` that posts itself again to a `Handler`:
 
@@ -6336,18 +6637,19 @@ public void run() {
 ```
 
 
-**Signature:** `Data(User user, TotpAccount account, byte[] secret)`
+**Signature:** `Data(User user, TotpAccount account, byte[] secret, Bitmap avatar)`
 
-- **What it does:** Constructor of the holder for the user, the authenticator and its **decrypted** secret.
-- **Inputs → output:** three values → `Data`.
+- **What it does:** Constructor of the holder for the user, the authenticator, its **decrypted** secret and the small profile photo (or `null`).
+- **Inputs → output:** four values → `Data`.
 - **Called by:** `loadData`.
 - **Calls next:** nothing.
 
 ```java
-Data(User user, TotpAccount account, byte[] secret) {
+Data(User user, TotpAccount account, byte[] secret, Bitmap avatar) {
     this.user = user;
     this.account = account;
     this.secret = secret;
+    this.avatar = avatar;
 }
 ```
 
@@ -6424,6 +6726,7 @@ private void showSuspiciousLoginDialog(double km) {
  * Pressing the code dims it (OnTouchListener gives instant feedback); lifting the finger
  * inside it counts as a click, which copies the code.
  */
+@SuppressLint({"ClickableViewAccess", "ClickableViewAccessibility"}) // the listener only dims the code and returns false, so the normal click (and its accessibility action) still runs
 private void setUpTapToCopy() {
     binding.textCode.setOnTouchListener((view, event) -> {
         switch (event.getActionMasked()) {
@@ -6461,6 +6764,21 @@ private void setUpTapToCopy() {
 @Override
 protected boolean requiresSession() {
     return true;
+}
+```
+
+
+**Signature:** `protected boolean isSecureScreen()`
+
+- **What it does:** Marks this screen as secure (it shows the live code): `BaseActivity.onCreate` sets `FLAG_SECURE`, so screenshots, screen recording and the recent-apps preview are blocked.
+- **Inputs → output:** nothing → `true`.
+- **Called by:** `BaseActivity.onCreate`.
+- **Calls next:** nothing.
+
+```java
+@Override
+protected boolean isSecureScreen() {
+    return true; // shows live codes / backup codes
 }
 ```
 
@@ -6506,14 +6824,16 @@ protected void onStop() {
 
 **Signature:** `private void loadData()`
 
-- **What it does:** In the background: loads the user and account and **decrypts** the secret with the Keystore. A missing account or a decryption error gives `null`.
+- **What it does:** In the background: loads the user and account, reads a 40 dp copy of the profile photo and **decrypts** the secret with the Keystore. A missing account or a decryption error gives `null`.
 - **Inputs → output:** nothing → `Data` or `null` to `onDataLoaded`.
 - **Called by:** `onStart`; the swipe-refresh listener.
-- **Calls next:** `UserDao.getById`, `TotpAccountDao.listForUser`, `KeystoreHelper.decrypt`.
+- **Calls next:** `UserDao.getById`, `TotpAccountDao.listForUser`, `AvatarStore.load`, `KeystoreHelper.decrypt`.
 
 ```java
 /** Loads the account and decrypts the secret off the UI thread. */
 private void loadData() {
+    final Context appContext = getApplicationContext();
+    final int avatarSizePx = (int) (AVATAR_DP * getResources().getDisplayMetrics().density);
     runInBackground(() -> {
         User user = userDao.getById(userId);
         List<TotpAccount> accounts = accountDao.listForUser(userId);
@@ -6521,8 +6841,10 @@ private void loadData() {
             return null;
         }
         TotpAccount found = accounts.get(0);
+        // Small copy for the toolbar, read here so the UI thread never decodes a picture
+        Bitmap avatar = AvatarStore.load(appContext, user.avatarUri, avatarSizePx);
         try {
-            return new Data(user, found, KeystoreHelper.decrypt(found.secretEnc, found.iv));
+            return new Data(user, found, KeystoreHelper.decrypt(found.secretEnc, found.iv), avatar);
         } catch (GeneralSecurityException e) {
             return null;
         }
@@ -6533,10 +6855,10 @@ private void loadData() {
 
 **Signature:** `private void onDataLoaded(@Nullable Data data)`
 
-- **What it does:** Stops the refresh spinner. No data → toast and close. If the screen was hidden meanwhile, wipes and drops the secret. Otherwise keeps the secret, shows issuer and username, tells the ring the period, and (re)starts the ticker.
+- **What it does:** Stops the refresh spinner. No data → toast and close. If the screen was hidden meanwhile, wipes and drops the secret. Otherwise keeps the secret, shows issuer and username, shows the photo, tells the ring the period, and (re)starts the ticker.
 - **Inputs → output:** `Data` or `null` → nothing.
 - **Called by:** `runInBackground` (after `loadData`).
-- **Calls next:** `wipeSecret`, `CountdownRingView.setPeriodSeconds`, `Handler.post(tick)`.
+- **Calls next:** `wipeSecret`, `showAvatar`, `CountdownRingView.setPeriodSeconds`, `Handler.post(tick)`.
 
 ```java
 private void onDataLoaded(@Nullable Data data) {
@@ -6557,10 +6879,37 @@ private void onDataLoaded(@Nullable Data data) {
     binding.textIssuer.setText(account.issuer);
     binding.textAccount.setText(data.user.username);
     binding.ring.setPeriodSeconds(account.period);
+    showAvatar(data.avatar);
 
     lastCode = ""; // forces the display to redraw even if the code did not change
     handler.removeCallbacks(tick);
     handler.post(tick);
+}
+```
+
+
+**Signature:** `private void showAvatar(@Nullable Bitmap avatar)`
+
+- **What it does:** Puts the profile photo at the left of the toolbar as a **round** icon (`RoundedBitmapDrawableFactory`, `setCircular(true)`) using the action bar's "home" button; tapping it opens Profile. With no photo the home button is hidden.
+- **Inputs → output:** `Bitmap` or `null` → nothing.
+- **Called by:** `onDataLoaded`.
+- **Calls next:** `RoundedBitmapDrawableFactory.create`, `ActionBar.setHomeAsUpIndicator`, `setDisplayHomeAsUpEnabled`.
+
+```java
+/** The profile photo as a round icon at the left of the toolbar; tapping it opens Profile. */
+private void showAvatar(@Nullable Bitmap avatar) {
+    if (getSupportActionBar() == null) {
+        return;
+    }
+    if (avatar == null) {
+        getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+        return;
+    }
+    RoundedBitmapDrawable round = RoundedBitmapDrawableFactory.create(getResources(), avatar);
+    round.setCircular(true);
+    getSupportActionBar().setHomeAsUpIndicator(round);
+    getSupportActionBar().setHomeActionContentDescription(R.string.menu_profile);
+    getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 }
 ```
 
@@ -6631,10 +6980,10 @@ public boolean onCreateOptionsMenu(Menu menu) {
 
 **Signature:** `public boolean onOptionsItemSelected(MenuItem item)`
 
-- **What it does:** Opens Backup codes, Login history or Trusted devices with explicit Intents, logs out, and shows a "coming in a later phase" toast for Profile, Settings and Help (not built yet).
+- **What it does:** Opens Backup codes, Login history, Trusted devices, **Profile** (also from the toolbar photo, which is the `android.R.id.home` item), **Settings** and **Help** with explicit Intents, and logs out.
 - **Inputs → output:** chosen `MenuItem` → `true` if handled.
 - **Called by:** Android, when a menu item is tapped.
-- **Calls next:** `logout`, `startActivity(...)`, `showToast`.
+- **Calls next:** `logout`, `startActivity(...)`.
 
 ```java
 @Override
@@ -6655,11 +7004,16 @@ public boolean onOptionsItemSelected(MenuItem item) {
         startActivity(new Intent(this, TrustedDevicesActivity.class)); // explicit Intent
         return true;
     }
-    if (item.getItemId() == R.id.action_profile
-            || item.getItemId() == R.id.action_settings
-            || item.getItemId() == R.id.action_help) {
-        // These screens are built in later phases
-        showToast(getString(R.string.coming_later, item.getTitle()));
+    if (item.getItemId() == R.id.action_profile || item.getItemId() == android.R.id.home) {
+        startActivity(new Intent(this, ProfileActivity.class)); // explicit Intent
+        return true;
+    }
+    if (item.getItemId() == R.id.action_settings) {
+        startActivity(new Intent(this, SettingsActivity.class)); // explicit Intent
+        return true;
+    }
+    if (item.getItemId() == R.id.action_help) {
+        startActivity(new Intent(this, HelpActivity.class)); // explicit Intent
         return true;
     }
     return super.onOptionsItemSelected(item);
@@ -6962,7 +7316,9 @@ The code field starts with `android:enabled="false"` and is switched on in `onLo
 | Unit 2 — **graphics** · CO1 | Custom `View`, `Canvas`, `Paint`, `drawArc` | `CountdownRingView.onDraw`, `onMeasure` | Draws the shrinking countdown ring by hand |
 | Unit 2 — **touch listener** | `View.OnTouchListener` | `DashboardActivity.setUpTapToCopy` | Dims the code while pressed, restores on release |
 | Unit 2 — **menus** | Options menu (`onCreateOptionsMenu`, `onOptionsItemSelected`) | `DashboardActivity`; `menu_dashboard.xml` | Overflow menu: history, codes, devices, profile, settings, help, log out |
-| Unit 2 — toasts | `Toast` | `DashboardActivity.setUpTapToCopy`, `onOptionsItemSelected` | "Code copied", "coming later" |
+| Unit 2 — toasts | `Toast` | `DashboardActivity.setUpTapToCopy` | "Code copied" |
+| Unit 3 — displaying images | `RoundedBitmapDrawable` in the action bar | `DashboardActivity.showAvatar` | The profile photo as a round toolbar icon |
+| Self-learning | `FLAG_SECURE` | `DashboardActivity.isSecureScreen` | No screenshots of the live code |
 | Unit 2 — pop-up dialogs | `AlertDialog` | `DashboardActivity.showSuspiciousLoginDialog` | Unusual-location warning with a **View map** button |
 | Unit 2 — simple controls | `TextInputEditText` (number keyboard), `TextView`, `SwipeRefreshLayout` | `activity_totp_verify.xml`, `activity_dashboard.xml` | 6-digit entry; pull down to reload |
 | Unit 2 — multiscreen · Lab 3 explicit Intents | Explicit `Intent` + extras, Activity Result API | `TotpVerifyActivity.goToBiometricGate`, `recoveryLauncher`, `enrollLauncher`, `revokedDeviceLauncher` | Moves along the handshake and waits for sub-screens' answers |
@@ -6975,7 +7331,7 @@ The code field starts with `android:enabled="false"` and is switched on in `onLo
 - Three mistakes in a row (counting every step) lock the account for five minutes.
 - On the Dashboard the same engine runs once a second and shows today's code. The ring is drawn by us on a canvas: a thick circle outline whose length shrinks as the 30 seconds run out and turns red at 5.
 - Touch the code and it dims; release and it is copied. Swipe down and it reloads.
-- When you leave the screen, the readable secret is wiped from memory.
+- When you leave the screen, the readable secret is wiped from memory, and Android does not allow screenshots of this screen at all.
 
 #### g. Likely viva questions
 
@@ -6989,13 +7345,13 @@ The code field starts with `android:enabled="false"` and is switched on in `onLo
 
 #### a. Purpose
 
-`BiometricGateActivity` is **step 3 of the handshake**. It shows the system fingerprint prompt (or the screen lock as a fallback). Only a successful check here creates the **session**, and nothing else does, so the Dashboard cannot be reached without passing the password, the code and this step. `SessionManager` keeps the raw session token **only in memory** and stores just its SHA-256 hash in the `sessions` table; every protected screen checks both.
+`BiometricGateActivity` is **step 3 of the handshake**. It opens only if `LoginHandshake` says the password **and** the code step passed for this user. It shows the system fingerprint prompt (or the screen lock as a fallback). Only a successful check here creates the **session**, and nothing else does, so the Dashboard cannot be reached without passing the password, the code and this step. `SessionManager` keeps the raw session token **only in memory** and stores just its SHA-256 hash in the `sessions` table; every protected screen checks both.
 
 #### b. Files involved
 
 | Kind | Files |
 |---|---|
-| Java | `app/src/main/java/com/secureauth/simulator/ui/BiometricGateActivity.java`, `app/src/main/java/com/secureauth/simulator/ui/BiometricSupport.java`, `app/src/main/java/com/secureauth/simulator/data/SessionManager.java` (and `SessionDao`/`Session`, documented in [4.2](#42-data-layer); `BaseActivity.enforceSession`/`endSession` in [4.3](#43-ui-foundation-and-splash)) |
+| Java | `app/src/main/java/com/secureauth/simulator/ui/BiometricGateActivity.java`, `app/src/main/java/com/secureauth/simulator/ui/BiometricSupport.java`, `app/src/main/java/com/secureauth/simulator/data/SessionManager.java`, `app/src/main/java/com/secureauth/simulator/data/LoginHandshake.java` ([4.18](#418-login-handshake-guard)) (and `SessionDao`/`Session`, documented in [4.2](#42-data-layer); `BaseActivity.enforceSession`/`endSession` in [4.3](#43-ui-foundation-and-splash)) |
 | Layout | `app/src/main/res/layout/activity_biometric_gate.xml` |
 | Resources | `strings.xml` (Biometric gate group); the system prompt itself is drawn by Android |
 | Manifest | `BiometricGateActivity` has `android:configChanges` (orientation, screenSize, screenLayout, keyboardHidden), so rotation does not rebuild it (finishing the login waits for a location lookup and the result must not be lost) |
@@ -7053,7 +7409,7 @@ static Availability fromCanAuthenticate(int result) {
 
 ##### Class `SessionManager` (who is logged in)
 
-**File:** `app/src/main/java/com/secureauth/simulator/data/SessionManager.java` (148 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/data/SessionManager.java` (140 lines)
 
 A singleton. The raw token lives only in this object's memory, so it disappears when the app process dies. A screen is allowed to open only if the token in memory has not expired **and** its hash is still in the database (so a logout elsewhere is respected).
 
@@ -7130,17 +7486,15 @@ public static String hashToken(String token) {
 
 **Signature:** `public static long getAutoLockMs(Context context)`
 
-- **What it does:** The auto-lock time from `SharedPreferences` (key `auto_lock_ms`), default 5 minutes, kept inside 1 to 30 minutes. No screen writes this key yet (Settings is not built), so it is always 5 minutes today.
+- **What it does:** The auto-lock time chosen in Settings (preference `auto_lock_ms`), default 5 minutes, always kept inside 1 to 30 minutes. It simply asks `AppSettings.getAutoLockMs`, which owns the key name and the limits ([4.13](#413-settings)).
 - **Inputs → output:** `Context` → ms.
 - **Called by:** `BiometricGateActivity.completeLogin`.
-- **Calls next:** `SharedPreferences.getLong`, `Math.max/min`.
+- **Calls next:** `AppSettings.getAutoLockMs`.
 
 ```java
 /** The auto-lock time from Settings (default 5 minutes), kept inside 1 to 30 minutes. */
 public static long getAutoLockMs(Context context) {
-    long saved = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getLong(PREF_AUTO_LOCK_MS, DEFAULT_AUTO_LOCK_MS);
-    return Math.max(MIN_AUTO_LOCK_MS, Math.min(MAX_AUTO_LOCK_MS, saved));
+    return AppSettings.getAutoLockMs(context);
 }
 ```
 
@@ -7271,15 +7625,15 @@ public synchronized Snapshot clear() {
 
 ##### Class `BiometricGateActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/BiometricGateActivity.java` (282 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/BiometricGateActivity.java` (306 lines)
 
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-- **What it does:** Reads `EXTRA_USER_ID` (finishes without it), builds the screen and DAOs, chooses the authenticators, creates the `BiometricPrompt` with our callback, and builds the `PromptInfo` (title, subtitle, **no negative button** because the screen lock is the fallback). Starts the prompt on a fresh start only (after a rotation the system keeps the open prompt and re-attaches the new callback).
+- **What it does:** Reads `EXTRA_USER_ID` (finishes without it) and **asks `LoginHandshake.allowsBiometricStep`**: if the password and code steps did not both pass for this user within 10 minutes, it goes to Login. Then builds the screen and DAOs, chooses the authenticators, creates the `BiometricPrompt` with our callback, and builds the `PromptInfo` (title, subtitle, **no negative button** because the screen lock is the fallback). Starts the prompt on a fresh start only (after a rotation the system keeps the open prompt and re-attaches the new callback); the optional extra `EXTRA_SHOW_PROMPT=false` exists only so tests can keep the system prompt from opening over the screen, and with the prompt off no check can succeed, so no session can come from it.
 - **Inputs → output:** saved state → nothing.
 - **Called by:** Android, after `TotpVerifyActivity.goToBiometricGate` (explicit Intent with `EXTRA_USER_ID`).
-- **Calls next:** `BiometricSupport.authenticators`, `new BiometricPrompt(...)`, `startAuthentication`.
+- **Calls next:** `LoginHandshake.allowsBiometricStep`, `goToLogin`, `BiometricSupport.authenticators`, `new BiometricPrompt(...)`, `startAuthentication`.
 
 ```java
 @Override
@@ -7288,6 +7642,11 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
     userId = getIntent().getLongExtra(EXTRA_USER_ID, -1L);
     if (userId < 0) {
         finish();
+        return;
+    }
+    // Steps 1 and 2 must really have passed; an Intent saying so is not proof
+    if (!LoginHandshake.getInstance().allowsBiometricStep(userId, System.currentTimeMillis())) {
+        goToLogin();
         return;
     }
 
@@ -7313,8 +7672,27 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
     binding.buttonBackToLogin.setOnClickListener(v -> finish());
 
     // After a rotation the system keeps the open prompt and re-attaches our new callback
-    if (savedInstanceState == null) {
+    if (savedInstanceState == null && getIntent().getBooleanExtra(EXTRA_SHOW_PROMPT, true)) {
         startAuthentication();
+    }
+}
+```
+
+
+**Signature:** `protected void onDestroy()`
+
+- **What it does:** When this screen is really finishing (cancelled, locked or completed) the login progress is forgotten (`LoginHandshake.clear()`), so the earlier steps cannot be reused to open this screen again.
+- **Inputs → output:** nothing.
+- **Called by:** Android.
+- **Calls next:** `LoginHandshake.clear`.
+
+```java
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+    if (isFinishing()) {
+        // Cancelled, locked or finished: the earlier steps may not be reused to open this screen again
+        LoginHandshake.getInstance().clear();
     }
 }
 ```
@@ -7484,10 +7862,10 @@ void handleSuccess() {
 
 **Signature:** `void completeLogin(@Nullable Double lat, @Nullable Double lng)`
 
-- **What it does:** **The most important method of the handshake.** In the background: clears the failure counter (`recordSuccess`), writes `BIOMETRIC_OK`, compares the place with the previous `SESSION_START` (**before** writing this one, or it would be compared with itself) and flags a distance over 100 km, **creates the session**, writes `SESSION_START` (with the place) and, if far away, `SUSPICIOUS_LOCATION`. Then opens `DashboardActivity` on an empty back stack, passing the distance if suspicious. If the session cannot be stored it shows an error and offers *Try again*.
+- **What it does:** **The most important method of the handshake.** In the background: clears the failure counter (`recordSuccess`), writes `BIOMETRIC_OK`, compares the place with the previous `SESSION_START` (**before** writing this one, or it would be compared with itself) and flags a distance over 100 km, **creates the session**, clears the handshake (nothing left to prove), writes `SESSION_START` (with the place) and, if far away, `SUSPICIOUS_LOCATION`. Then opens `DashboardActivity` on an empty back stack, passing the distance if suspicious. If the session cannot be stored it shows an error and offers *Try again*.
 - **Inputs → output:** latitude, longitude (or `null`) → opens the Dashboard.
 - **Called by:** `handleSuccess`.
-- **Calls next:** `SessionManager.getAutoLockMs`, `LockoutManager.recordSuccess`, `AuditLogDao.log/findLastWithLocation`, `LocationHelper.distanceKm/isSuspicious`, `SessionManager.create`, `startActivity(DashboardActivity)`.
+- **Calls next:** `SessionManager.getAutoLockMs`, `LockoutManager.recordSuccess`, `AuditLogDao.log/findLastWithLocation`, `LocationHelper.distanceKm/isSuspicious`, `SessionManager.create`, `LoginHandshake.clear`, `startActivity(DashboardActivity)`.
 
 ```java
 final long autoLockMs = SessionManager.getAutoLockMs(this);
@@ -7512,6 +7890,7 @@ runInBackground(() -> {
         }
 
         SessionManager.getInstance().create(sessionDao, userId, autoLockMs, now);
+        LoginHandshake.getInstance().clear(); // the handshake is complete: nothing left to prove
         auditDao.log(userId, AuditEvent.SESSION_START, AuditEvent.RESULT_SUCCESS, lat, lng);
         if (suspiciousKm != NOT_SUSPICIOUS) {
             auditDao.log(userId, AuditEvent.SUSPICIOUS_LOCATION, AuditEvent.RESULT_WARNING, lat, lng);
@@ -7695,7 +8074,7 @@ The `text_status` line changes with the state (waiting, wrong finger, locked out
 #### g. Likely viva questions
 
 1. **Why store only the hash of the session token, and why keep the raw token in memory?** — If someone copies the database they should not find a usable token. The raw token exists only in RAM, so it disappears when the process dies. A fast SHA-256 is enough because the token is 256 random bits (cannot be guessed; only stolen).
-2. **How do you make sure the Dashboard cannot be opened without the full handshake?** — The only code that creates a session is `BiometricGateActivity.completeLogin`. `DashboardActivity.onCreate` calls `enforceSession`, which needs an active token in memory *and* a matching hash in `sessions`, and the user id is read from the session, not from an Intent extra. Without a session the Activity redirects to Login.
+2. **How do you make sure the Dashboard cannot be opened without the full handshake?** — The only code that creates a session is `BiometricGateActivity.completeLogin` (a unit test checks that no other class calls `SessionManager.create`). `DashboardActivity.onCreate` calls `enforceSession`, which needs an active token in memory *and* a matching hash in `sessions`, and the user id is read from the session, not from an Intent extra. The fingerprint screen itself opens only if `LoginHandshake` proves the password and code steps passed. Without a session the Activity redirects to Login.
 3. **What if the phone has no fingerprint or screen lock?** — `BiometricManager.canAuthenticate` tells us. If nothing is enrolled we show a dialog with an implicit Intent to the system settings to add one; if there is no usable hardware the login cannot be completed — the step is never skipped.
 
 ---
@@ -7704,7 +8083,7 @@ The `text_status` line changes with the state (waiting, wrong finger, locked out
 
 #### a. Purpose
 
-Backup codes are the way back in when the authenticator app is lost. `BackupCodesActivity` creates **10 single-use codes** (after a warning that old codes stop working), shows them **once** in a dialog with *Save as .txt* and *Share*, and shows "X of 10 codes remaining". `BackupRecoveryActivity` lets the user spend one code either to log in this once (it replaces the 6-digit step) or to set up a new authenticator; a revoked phone uses the same screen to hand over one extra code. Only salted hashes are stored.
+Backup codes are the way back in when the authenticator app is lost. `BackupCodesActivity` creates **10 single-use codes** (after a warning that old codes stop working), shows them **once** in a dialog with *Save as .txt* and *Share*, and shows "X of 10 codes remaining". The screen and the codes dialog block screenshots (`FLAG_SECURE`). `BackupRecoveryActivity` (which opens only after the password step passed, checked with `LoginHandshake`) lets the user spend one code either to log in this once (it replaces the 6-digit step) or to set up a new authenticator; a revoked phone uses the same screen to hand over one extra code. Only salted hashes are stored.
 
 #### b. Files involved
 
@@ -7837,7 +8216,7 @@ protected void onCleared() {
 
 ##### Class `BackupCodesActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/BackupCodesActivity.java` (232 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/BackupCodesActivity.java` (242 lines)
 
 The "Save as .txt" launcher uses the Storage Access Framework (system file picker), so no storage permission is needed:
 
@@ -7859,6 +8238,21 @@ private final ActivityResultLauncher<String> saveLauncher = registerForActivityR
 @Override
 protected boolean requiresSession() {
     return true;
+}
+```
+
+
+**Signature:** `protected boolean isSecureScreen()`
+
+- **What it does:** This screen shows live backup codes, so it is a **secure screen**: `BaseActivity.onCreate` sets `FLAG_SECURE` on it.
+- **Inputs → output:** nothing → `true`.
+- **Called by:** `BaseActivity.onCreate`.
+- **Calls next:** nothing.
+
+```java
+@Override
+protected boolean isSecureScreen() {
+    return true; // shows live codes / backup codes
 }
 ```
 
@@ -8060,7 +8454,7 @@ private java.util.function.Supplier<BackupCodesViewModel.Generation> generationW
 
 **Signature:** `private void showCodesDialog()`
 
-- **What it does:** Inflates `dialog_backup_codes.xml`, writes the numbered codes into one monospace `TextView`, wires **Save as .txt** (opens the file picker with the suggested name `backup_codes.txt`) and **Share**, and shows a non-cancellable dialog (a stray tap must not throw the codes away). **Done** forgets the codes.
+- **What it does:** Inflates `dialog_backup_codes.xml`, writes the numbered codes into one monospace `TextView`, wires **Save as .txt** (opens the file picker with the suggested name `backup_codes.txt`) and **Share**, and shows a non-cancellable dialog (a stray tap must not throw the codes away). A dialog is its own window, so the Activity's `FLAG_SECURE` does not cover it: the dialog's window gets `FLAG_SECURE` too. **Done** forgets the codes.
 - **Inputs → output:** nothing.
 - **Called by:** `render` (when `pending` is not `null`).
 - **Calls next:** `DialogBackupCodesBinding.inflate`, `saveLauncher.launch`, `shareCodes`, `clearPending`.
@@ -8091,6 +8485,9 @@ private void showCodesDialog() {
                 refreshRemaining();
             })
             .create();
+    // A dialog is its own window, so the Activity's FLAG_SECURE does not cover it
+    codesDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE);
     codesDialog.show();
 }
 ```
@@ -8214,7 +8611,7 @@ public static String formatBackupCodes(List<String> codes, String username, Stri
 
 ##### Class `BackupRecoveryActivity`
 
-**File:** `app/src/main/java/com/secureauth/simulator/ui/BackupRecoveryActivity.java` (231 lines)
+**File:** `app/src/main/java/com/secureauth/simulator/ui/BackupRecoveryActivity.java` (237 lines)
 
 Result for the caller (`TotpVerifyActivity`): `RESULT_OK` = the code step is done, `RESULT_LOCKED` (a custom code, `RESULT_FIRST_USER`) = the account got locked, `RESULT_CANCELED` = nothing was completed.
 
@@ -8251,10 +8648,10 @@ Loaded(long lockRemainingMs, int unusedCodes) {
 
 **Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-- **What it does:** Reads `EXTRA_USER_ID` (and `EXTRA_REVOKED_DEVICE`), builds the screen and DAOs. In revoked-phone mode it hides the two radio options and changes the subtitle. Starts `loadState`.
+- **What it does:** Reads `EXTRA_USER_ID` (and `EXTRA_REVOKED_DEVICE`). Recovery stands in for step 2, so it first asks `LoginHandshake.allowsCodeStep`; if step 1 did not pass for this user it goes to Login. Then builds the screen and DAOs. In revoked-phone mode it hides the two radio options and changes the subtitle. Starts `loadState`.
 - **Inputs → output:** saved state → nothing.
 - **Called by:** Android, after `TotpVerifyActivity` launches it (link, or revoked phone).
-- **Calls next:** `ActivityBackupRecoveryBinding.inflate`, `loadState`, `onContinueClicked`.
+- **Calls next:** `LoginHandshake.allowsCodeStep`, `goToLogin`, `ActivityBackupRecoveryBinding.inflate`, `loadState`, `onContinueClicked`.
 
 ```java
 @Override
@@ -8266,6 +8663,11 @@ protected void onCreate(@Nullable Bundle savedInstanceState) {
         return;
     }
     revokedDevice = getIntent().getBooleanExtra(EXTRA_REVOKED_DEVICE, false);
+    // Recovery stands in for step 2, so step 1 must really have passed
+    if (!LoginHandshake.getInstance().allowsCodeStep(userId, System.currentTimeMillis())) {
+        goToLogin();
+        return;
+    }
 
     binding = ActivityBackupRecoveryBinding.inflate(getLayoutInflater());
     setContentView(binding.getRoot());
@@ -8523,6 +8925,7 @@ The radio buttons are two `MaterialRadioButton`s inside one `RadioGroup`, so onl
 | Unit 2 — multiscreen · Lab 3 explicit Intent | Explicit `Intent`, Activity Result API with custom result code | `BackupRecoveryActivity.RESULT_LOCKED`; `enrollLauncher` | Returns OK / locked / cancelled to the TOTP screen |
 | Unit 6 SQLite · CO3 | Transactions, atomic `UPDATE ... WHERE used = 0` | `BackupCodeDao.replaceForUser`, `markUsed` | Swap the whole set; spend a code once |
 | Self-learning | `ViewModel` with its own thread, salted hashing | `BackupCodesViewModel`, `BackupCodeGenerator` | Codes survive rotation; only hashes are stored |
+| Self-learning | `FLAG_SECURE` on an Activity and on a dialog window | `BackupCodesActivity.isSecureScreen`, `showCodesDialog` | The codes cannot be captured by a screenshot |
 
 #### f. Explain it simply
 
@@ -8677,6 +9080,10 @@ private static final String KEY_LOCATION = "location";
 // The system file picker: "where should audit_log.csv go?"
 private final ActivityResultLauncher<String> exportLauncher = registerForActivityResult(
         new ActivityResultContracts.CreateDocument(FileExporter.MIME_CSV), this::exportTo);
+
+// The system file picker: "which file do you want to import?"
+private final ActivityResultLauncher<String[]> importLauncher = registerForActivityResult(
+        new ActivityResultContracts.OpenDocument(), this::importFrom);
 ```
 
 
@@ -8965,7 +9372,7 @@ public boolean onOptionsItemSelected(MenuItem item) {
 
 **Signature:** `void exportTo(@Nullable Uri destination)`
 
-- **What it does:** The user chose where to save (`null` if they closed the picker). Builds the CSV text from **exactly the rows shown** (so an active date filter applies) and writes it in the background; shows "Exported N entries" or an error toast.
+- **What it does:** The user chose where to save (`null` if they closed the picker). Builds the CSV text from **exactly the rows shown** (so an active date filter applies) and writes it in the background; shows "Exported N entries" (a plural resource: "1 entry" for one) or an error toast.
 - **Inputs → output:** `Uri` or `null` → nothing.
 - **Called by:** the `exportLauncher` result callback.
 - **Calls next:** `FileExporter.formatAuditCsv`, `FileExporter.writeText`, `showToast`.
@@ -8979,7 +9386,7 @@ void exportTo(@Nullable Uri destination) {
     final List<AuditLog> rows = new ArrayList<>(shown);
     final String csv = FileExporter.formatAuditCsv(rows, TimeZone.getDefault());
     runInBackground(() -> FileExporter.writeText(getContentResolver(), destination, csv),
-            ok -> showToast(ok ? getString(R.string.export_done, rows.size())
+            ok -> showToast(ok ? getResources().getQuantityString(R.plurals.export_done, rows.size(), rows.size())
                     : getString(R.string.export_failed)));
 }
 ```
@@ -8987,7 +9394,7 @@ void exportTo(@Nullable Uri destination) {
 
 **Signature:** `void importFrom(@Nullable Uri source)`
 
-- **What it does:** Reads the chosen file (refusing big or unreadable ones) and adds its valid new rows to **this user's** history in the background; then shows "Imported N, skipped M duplicates and K invalid rows" and reloads the list. A file that is not an audit log changes nothing.
+- **What it does:** Reads the chosen file (refusing big or unreadable ones) and adds its valid new rows to **this user's** history in the background; then shows "Imported: N. Skipped as duplicates: M. Skipped as invalid: K." and reloads the list. A file that is not an audit log changes nothing.
 - **Inputs → output:** `Uri` or `null` → nothing.
 - **Called by:** the `importLauncher` result callback.
 - **Calls next:** `CsvImporter.readText`, `CsvImporter.importInto`, `showToast`, `loadHistory`.
@@ -9643,29 +10050,29 @@ public LocationHelper(Context context) {
 
 **Signature:** `private SharedPreferences prefs()`
 
-- **What it does:** Opens the shared preferences file `secureauth_prefs`.
+- **What it does:** Opens the shared preferences file `secureauth_prefs` (the name comes from `AppSettings.PREFS_NAME`). This class only keeps the "explanation was shown" flag there.
 - **Inputs → output:** nothing → `SharedPreferences`.
 - **Called by:** `isRecordingEnabled`, `wasAsked`, `markAsked`.
 - **Calls next:** `getSharedPreferences`.
 
 ```java
 private SharedPreferences prefs() {
-    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    return context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE);
 }
 ```
 
 
 **Signature:** `public boolean isRecordingEnabled()`
 
-- **What it does:** The "Record login location" setting (key `record_location`), **on by default**. Nothing can switch it off yet because the Settings screen is not built.
+- **What it does:** The "Record login location" setting, **on by default**; the check box in Settings changes it. The key and the default live in `AppSettings` ([4.13](#413-settings)), so this method only asks `AppSettings.isRecordLocation`.
 - **Inputs → output:** nothing → `boolean`.
 - **Called by:** `requestCurrentLocation`, `BaseActivity.ensureLocationPermission`.
-- **Calls next:** `SharedPreferences.getBoolean`.
+- **Calls next:** `AppSettings.isRecordLocation`.
 
 ```java
 /** The "Record login location" setting. On by default. */
 public boolean isRecordingEnabled() {
-    return prefs().getBoolean(PREF_RECORD_LOCATION, true);
+    return AppSettings.isRecordLocation(context);
 }
 ```
 
@@ -10094,6 +10501,7 @@ The permission flow lives in `BaseActivity.ensureLocationPermission` ([4.3](#43-
 | **Unit 4** — location tracking with Google Maps · **Lab 8** · CO3 | `SupportMapFragment`, `GoogleMap`, `addMarker`, `LatLngBounds`, `CameraUpdateFactory` | `LoginMapActivity.onMapReady`, `drawMarkers`; `activity_login_map.xml` | Draws every located login; green/red markers with info windows; fits the camera |
 | Unit 4 | `FusedLocationProviderClient.getCurrentLocation` | `LocationHelper.requestCurrentLocation` | One-shot position lookup with a timeout |
 | Unit 4 | Runtime permissions (`RequestMultiplePermissions`), manifest `<uses-permission>` | `BaseActivity.ensureLocationPermission`; `AndroidManifest.xml` | Explains, then asks; works without it |
+| Unit 2 — check boxes | `MaterialCheckBox` "Record login location" | `SettingsActivity.setUpLocationCheckBox` ([4.13](#413-settings)) | Turns location recording on or off |
 | Unit 4 | Maps API key through manifest `<meta-data>` | `AndroidManifest.xml`; `app/build.gradle.kts` | Key comes from `local.properties`, never from source |
 | Unit 2 — pop-up dialogs | `AlertDialog` | `ensureLocationPermission` (rationale), `DashboardActivity.showSuspiciousLoginDialog` | Explains location; warns about an unusual login |
 | Unit 2 — menus | Up arrow in the toolbar | `LoginMapActivity.onOptionsItemSelected` | Back navigation |
@@ -10447,7 +10855,7 @@ private void showDevices(Loaded loaded) {
 private String stateText(TrustedDevice device) {
     String state = getString(device.revoked ? R.string.device_status_revoked : R.string.device_status_trusted);
     if (device.id == currentDeviceId) {
-        state += " - " + getString(R.string.device_this_device);
+        state = getString(R.string.device_state_current, state, getString(R.string.device_this_device));
     }
     return state;
 }
@@ -10779,305 +11187,2196 @@ The row layout `item_trusted_device.xml` mirrors `item_history.xml`: an icon (`i
 
 ---
 
-### 4.12 Profile (camera and gallery) — not built yet
+### 4.12 Profile (camera and gallery)
 
-> **Status: NOT IMPLEMENTED.** There is no `ProfileActivity`, no profile layout and no camera or gallery code in the repository (Phase 13 of `SECUREAUTH_PLAN.md` has not been started). This sub-section documents **only what really exists today** and, clearly marked, what the plan intends, so the team can answer honestly in the viva. Nothing here is invented code.
+#### a. Purpose
 
-#### a. Purpose (planned)
+The Profile screen shows who you are in the app: **username**, **member-since date**, the **issuer** of your authenticator and a **circular profile photo**. *Change photo* offers *Take photo* (the phone's camera app, started with an implicit Intent through `ActivityResultContracts.TakePicture` and a `FileProvider` link) or *Choose from gallery* (`ActivityResultContracts.PickVisualMedia`). Whichever way the picture arrives, `AvatarStore` copies it into the app's **private storage**, turns it upright, cuts a centred square, shrinks it to at most 512 px and saves it as a small JPEG; its path goes into `users.avatar_uri`. The same photo appears as a round icon in the Dashboard toolbar, and tapping it opens Profile.
 
-According to the plan, a Profile screen would show the username, member-since date, the enrolled issuer and a circular avatar. *Change photo* would offer *Take photo* (implicit `MediaStore.ACTION_IMAGE_CAPTURE` through `ActivityResultContracts.TakePicture` and a `FileProvider` URI) or *Choose from gallery* (`ActivityResultContracts.PickVisualMedia`); the chosen image would be copied into app-internal storage, downscaled, its path saved in `users.avatar_uri`, and shown on the Dashboard toolbar.
+#### b. Files involved
 
-#### b. Files involved — what exists today
+| Kind | Files |
+|---|---|
+| Java | `app/src/main/java/com/secureauth/simulator/ui/ProfileActivity.java`, `app/src/main/java/com/secureauth/simulator/io/AvatarStore.java`, `UserDao.setAvatarUri` ([4.2](#42-data-layer)), `DashboardActivity.loadData`/`showAvatar` ([4.6](#46-totp-verification-and-dashboard)) |
+| Layout | `app/src/main/res/layout/activity_profile.xml` (toolbar, `ShapeableImageView`, button, three texts) |
+| Drawable | `app/src/main/res/drawable/ic_avatar_placeholder.xml` (head-and-shoulders picture until a photo exists) |
+| Resources | `strings.xml` (Profile group), `app/src/main/res/xml/file_paths.xml` (`cache/camera/` may be reached through the FileProvider) |
+| Manifest | `CAMERA` permission, `<uses-feature camera.any required="false">`, `<queries>` for `IMAGE_CAPTURE`, the `ProfileActivity` entry |
+| Opened by | Dashboard options menu → *Profile*, or the round photo in the Dashboard toolbar |
 
-| What | Where | State |
-|---|---|---|
-| Menu entry "Profile" | `app/src/main/res/menu/menu_dashboard.xml` (`action_profile`) | Exists |
-| Handler that shows a toast instead | `DashboardActivity.onOptionsItemSelected` | Exists (placeholder) |
-| Column that would hold the photo path | `users.avatar_uri` in `DbHelper.onCreate`; field `User.avatarUri` | Exists, but **nothing writes it** (always `NULL`) |
-| FileProvider | `AndroidManifest.xml` `<provider>`, `res/xml/file_paths.xml` | Exists, but only shares `cache/qr/` (QR image), no photo folder |
-| `ProfileActivity`, `activity_profile.xml`, `CAMERA` permission, avatar code | — | **Do not exist** |
+#### c. Classes and methods
 
-The real placeholder code (the menu item `action_profile` is in `menu_dashboard.xml`, shown in [4.6](#46-totp-verification-and-dashboard)):
+##### Class `AvatarStore` (profile photo storage)
+
+**File:** `app/src/main/java/com/secureauth/simulator/io/AvatarStore.java` (262 lines)
+
+A phone photo is several megabytes; a 512 px avatar is a few dozen kilobytes. The original is never kept. All files live in the private folder `files/avatars/`; a new file name (with the time) is used for every save so no screen shows an old picture from a cache.
+
+**Signature:** `public static int sampleSize(int width, int height, int targetSide)`
+
+- **What it does:** The biggest power of two (1, 2, 4 …) by which a picture of this size can be shrunk while its **short** side stays at least `targetSide`. `BitmapFactory` then decodes only a fraction of the pixels, so a 12-megapixel photo does not fill the memory.
+- **Inputs → output:** width, height, target → `int` (≥ 1).
+- **Called by:** `AvatarStore.decode`, `AvatarStore.load`; `AvatarSizeTest`.
+- **Calls next:** nothing.
 
 ```java
-if (item.getItemId() == R.id.action_profile
-        || item.getItemId() == R.id.action_settings
-        || item.getItemId() == R.id.action_help) {
-    // These screens are built in later phases
-    showToast(getString(R.string.coming_later, item.getTitle()));
+/**
+ * The biggest power of two (1, 2, 4...) by which a picture of this size can be shrunk while
+ * the SHORT side stays at least {@code targetSide}. BitmapFactory then decodes only a fraction
+ * of the pixels, which keeps a 12-megapixel photo from filling the memory.
+ */
+public static int sampleSize(int width, int height, int targetSide) {
+    int shortSide = Math.min(width, height);
+    int sample = 1;
+    while (targetSide > 0 && shortSide / (sample * 2) >= targetSide) {
+        sample *= 2;
+    }
+    return sample;
+}
+```
+
+
+**Signature:** `public static int squareSide(int width, int height, int maxSide)`
+
+- **What it does:** The side of the square avatar: the short side of the picture, but never more than `maxSide` (and at least 1).
+- **Inputs → output:** width, height, max → `int`.
+- **Called by:** `AvatarStore.centreSquare`; `AvatarSizeTest`.
+- **Calls next:** `Math.min/max`.
+
+```java
+/** Side of the square avatar: the short side of the picture, but never more than {@code maxSide}. */
+public static int squareSide(int width, int height, int maxSide) {
+    return Math.max(1, Math.min(Math.min(width, height), maxSide));
+}
+```
+
+
+**Signature:** `public static boolean isInside(File dir, File file)`
+
+- **What it does:** True if `file` is inside `dir` **after resolving `..`** (canonical paths), so a damaged or tampered path cannot escape the avatar folder.
+- **Inputs → output:** folder, file → `boolean`.
+- **Called by:** `AvatarStore.load`, `AvatarStore.delete`; `AvatarSizeTest`.
+- **Calls next:** `File.getCanonicalPath`.
+
+```java
+/** True if {@code file} is inside {@code dir} (after resolving "..", so it cannot escape). */
+public static boolean isInside(File dir, File file) {
+    try {
+        String base = dir.getCanonicalPath() + File.separator;
+        return file.getCanonicalPath().startsWith(base);
+    } catch (IOException e) {
+        return false;
+    }
+}
+```
+
+
+**Signature:** `public static File avatarDir(Context context)`
+
+- **What it does:** The private folder `files/avatars` that holds every avatar.
+- **Inputs → output:** `Context` → `File`.
+- **Called by:** `saveFrom`, `load`, `delete`.
+- **Calls next:** `Context.getFilesDir`.
+
+```java
+/** The private folder that holds every avatar. */
+public static File avatarDir(Context context) {
+    return new File(context.getFilesDir(), DIR_NAME);
+}
+```
+
+
+**Signature:** `public static String saveFrom(Context context, long userId, Uri source)`
+
+- **What it does:** Copies the picture behind `source` into private storage and returns the saved file's **path**, or `null` if it could not be read as a picture: decode a shrunk copy → read the EXIF "which way up" tag and rotate → cut the centred square (≤ 512 px) → write `avatar_<userId>_<time>.jpg` at quality 85. The caller deletes the previous avatar. Must run on a background thread.
+- **Inputs → output:** `Context`, user id, `Uri` (gallery link or camera file) → path `String` or `null`.
+- **Called by:** `ProfileActivity.savePhoto` (background thread).
+- **Calls next:** `decode`, `orientationOf`, `rotate`, `centreSquare`, `avatarDir`, `Bitmap.compress`.
+
+```java
+/**
+ * Copies the picture behind {@code source} into private storage as this user's avatar and
+ * returns the saved file's path, or null if it could not be read as a picture. A new file name
+ * is used every time so no screen shows an old picture from a cache. Call from a background
+ * thread. The caller deletes the previous avatar (see {@link #delete}).
+ */
+@Nullable
+public static String saveFrom(Context context, long userId, Uri source) {
+    ContentResolver resolver = context.getContentResolver();
+    Bitmap decoded = decode(resolver, source);
+    if (decoded == null) {
+        return null;
+    }
+
+    Bitmap square = null;
+    try {
+        Bitmap upright = rotate(decoded, orientationOf(resolver, source));
+        square = centreSquare(upright, MAX_SIDE_PX);
+
+        File dir = avatarDir(context);
+        if (!dir.exists() && !dir.mkdirs()) {
+            return null;
+        }
+        File target = new File(dir, "avatar_" + userId + "_" + System.currentTimeMillis() + ".jpg");
+        try (OutputStream out = new FileOutputStream(target)) {
+            if (!square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)) {
+                target.delete();
+                return null;
+            }
+        }
+        return target.getAbsolutePath();
+    } catch (IOException | RuntimeException | OutOfMemoryError e) {
+        return null;
+    } finally {
+        decoded.recycle();
+        if (square != null) {
+            square.recycle();
+        }
+    }
+}
+```
+
+
+**Signature:** `public static Bitmap load(Context context, @Nullable String path, int maxSide)`
+
+- **What it does:** Reads a saved avatar at most `maxSide` pixels wide, or `null` if there is none. **Only files inside our own avatar folder are read**, so a tampered path in the database cannot make the app open some other file.
+- **Inputs → output:** `Context`, path or `null`, size → `Bitmap` or `null`.
+- **Called by:** `ProfileActivity.loadProfile` (512 px); `DashboardActivity.loadData` (40 dp).
+- **Calls next:** `isInside`, `sampleSize`, `BitmapFactory.decodeFile`.
+
+```java
+/**
+ * Reads a saved avatar, at most {@code maxSide} pixels wide, or null if there is none. Only
+ * files inside our own avatar folder are read, so a damaged or tampered path in the database
+ * cannot make the app open some other file.
+ */
+@Nullable
+public static Bitmap load(Context context, @Nullable String path, int maxSide) {
+    if (path == null || path.isEmpty()) {
+        return null;
+    }
+    File file = new File(path);
+    if (!file.isFile() || !isInside(avatarDir(context), file)) {
+        return null;
+    }
+
+    BitmapFactory.Options bounds = new BitmapFactory.Options();
+    bounds.inJustDecodeBounds = true;
+    BitmapFactory.decodeFile(path, bounds);
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        return null;
+    }
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxSide);
+    return BitmapFactory.decodeFile(path, options);
+}
+```
+
+
+**Signature:** `public static void delete(Context context, @Nullable String path)`
+
+- **What it does:** Deletes an avatar file (only if it is inside the avatar folder). Safe to call with `null`.
+- **Inputs → output:** `Context`, path or `null` → nothing.
+- **Called by:** `ProfileActivity.savePhoto` (removes the previous photo).
+- **Calls next:** `isInside`, `File.delete`.
+
+```java
+/** Deletes an avatar file (only if it is inside the avatar folder). Safe to call with null. */
+public static void delete(Context context, @Nullable String path) {
+    if (path == null || path.isEmpty()) {
+        return;
+    }
+    File file = new File(path);
+    if (isInside(avatarDir(context), file)) {
+        file.delete();
+    }
+}
+```
+
+
+**Signature:** `private static Bitmap decode(ContentResolver resolver, Uri source)`
+
+- **What it does:** Decodes a shrunk copy of the picture in two passes: first only the size (`inJustDecodeBounds`), then the pixels with `inSampleSize`. Returns `null` if the bytes are not a picture or the file is gone.
+- **Inputs → output:** resolver, `Uri` → `Bitmap` or `null`.
+- **Called by:** `saveFrom`.
+- **Calls next:** `ContentResolver.openInputStream`, `BitmapFactory.decodeStream`, `sampleSize`.
+
+```java
+/** Decodes a shrunk copy of the picture, or null if the bytes are not a picture. */
+@Nullable
+private static Bitmap decode(ContentResolver resolver, Uri source) {
+    BitmapFactory.Options bounds = new BitmapFactory.Options();
+    bounds.inJustDecodeBounds = true;
+    try (InputStream in = resolver.openInputStream(source)) {
+        if (in == null) {
+            return null;
+        }
+        BitmapFactory.decodeStream(in, null, bounds);
+    } catch (IOException | RuntimeException e) {
+        return null; // includes SecurityException and a file that is gone
+    }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        return null; // not an image
+    }
+
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, MAX_SIDE_PX);
+    try (InputStream in = resolver.openInputStream(source)) {
+        return in == null ? null : BitmapFactory.decodeStream(in, null, options);
+    } catch (IOException | RuntimeException | OutOfMemoryError e) {
+        return null;
+    }
+}
+```
+
+
+**Signature:** `private static int orientationOf(ContentResolver resolver, Uri source)`
+
+- **What it does:** The EXIF "which way up" tag, or "normal" if there is none or it cannot be read. The framework `ExifInterface` is used on purpose because the AndroidX one is a separate library the project does not allow.
+- **Inputs → output:** resolver, `Uri` → EXIF orientation constant.
+- **Called by:** `saveFrom`.
+- **Calls next:** `ExifInterface.getAttributeInt`.
+
+```java
+/**
+ * The EXIF "which way up" tag, or "normal" if there is none or it cannot be read. The framework
+ * class is used on purpose: the androidx one is a separate library, and this project only
+ * allows the libraries listed in the plan. The InputStream constructor exists from API 24.
+ */
+private static int orientationOf(ContentResolver resolver, Uri source) {
+    try (InputStream in = resolver.openInputStream(source)) {
+        if (in == null) {
+            return ExifInterface.ORIENTATION_NORMAL;
+        }
+        return new ExifInterface(in).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+    } catch (IOException | RuntimeException e) {
+        return ExifInterface.ORIENTATION_NORMAL;
+    }
+}
+```
+
+
+**Signature:** `private static Bitmap rotate(Bitmap source, int orientation)`
+
+- **What it does:** Turns or flips the pixels so the picture is upright, as the EXIF tag says (a camera records "this way up" in a tag instead of rotating the pixels).
+- **Inputs → output:** bitmap, orientation → upright `Bitmap`.
+- **Called by:** `saveFrom`.
+- **Calls next:** `Matrix.postRotate/postScale`, `Bitmap.createBitmap`.
+
+```java
+/** Turns the pixels so the picture is upright, as the EXIF tag says. */
+private static Bitmap rotate(Bitmap source, int orientation) {
+    Matrix matrix = new Matrix();
+    switch (orientation) {
+        case ExifInterface.ORIENTATION_ROTATE_90:
+            matrix.postRotate(90);
+            break;
+        case ExifInterface.ORIENTATION_ROTATE_180:
+            matrix.postRotate(180);
+            break;
+        case ExifInterface.ORIENTATION_ROTATE_270:
+            matrix.postRotate(270);
+            break;
+        case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+            matrix.postScale(-1, 1);
+            break;
+        case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+            matrix.postScale(1, -1);
+            break;
+        case ExifInterface.ORIENTATION_TRANSPOSE:
+            matrix.postRotate(90);
+            matrix.postScale(-1, 1);
+            break;
+        case ExifInterface.ORIENTATION_TRANSVERSE:
+            matrix.postRotate(270);
+            matrix.postScale(-1, 1);
+            break;
+        default:
+            return source;
+    }
+    return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
+}
+```
+
+
+**Signature:** `private static Bitmap centreSquare(Bitmap source, int maxSide)`
+
+- **What it does:** Cuts the biggest centred square out of the picture and shrinks it to at most `maxSide`. A transparent PNG is placed on **white**, because JPEG has no transparency and would turn it black.
+- **Inputs → output:** bitmap, max side → square `Bitmap`.
+- **Called by:** `saveFrom`.
+- **Calls next:** `squareSide`, `Bitmap.createBitmap`, `Canvas.drawColor/drawBitmap`.
+
+```java
+/**
+ * Cuts the biggest centred square out of the picture and shrinks it to at most
+ * {@code maxSide}. A transparent PNG is placed on white, because JPEG has no transparency
+ * and would turn it black.
+ */
+private static Bitmap centreSquare(Bitmap source, int maxSide) {
+    int side = squareSide(source.getWidth(), source.getHeight(), maxSide);
+    int shortSide = Math.min(source.getWidth(), source.getHeight());
+    int left = (source.getWidth() - shortSide) / 2;
+    int top = (source.getHeight() - shortSide) / 2;
+
+    Matrix scale = new Matrix();
+    float factor = (float) side / shortSide;
+    scale.postScale(factor, factor);
+    Bitmap cropped = Bitmap.createBitmap(source, left, top, shortSide, shortSide, scale, true);
+    if (!cropped.hasAlpha()) {
+        return cropped;
+    }
+    Bitmap flat = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
+    Canvas canvas = new Canvas(flat);
+    canvas.drawColor(Color.WHITE);
+    canvas.drawBitmap(cropped, 0, 0, null);
+    if (cropped != source) {
+        cropped.recycle();
+    }
+    return flat;
+}
+```
+
+
+##### Class `ProfileActivity`
+
+**File:** `app/src/main/java/com/secureauth/simulator/ui/ProfileActivity.java` (305 lines)
+
+Three activity-result launchers: the gallery picker, the camera and the camera permission dialog.
+
+```java
+// The phone's gallery picker. A null answer means the user closed it without choosing.
+private final ActivityResultLauncher<PickVisualMediaRequest> galleryLauncher = registerForActivityResult(
+        new ActivityResultContracts.PickVisualMedia(), this::onPhotoPicked);
+
+// The camera app (implicit Intent ACTION_IMAGE_CAPTURE) writes into the Uri we give it and
+// answers true if a picture was taken
+private final ActivityResultLauncher<Uri> cameraLauncher = registerForActivityResult(
+        new ActivityResultContracts.TakePicture(), this::onPhotoTaken);
+
+// The system "allow the camera?" dialog; the answer is true if the user allowed it
+private final ActivityResultLauncher<String> cameraPermissionLauncher = registerForActivityResult(
+        new ActivityResultContracts.RequestPermission(), this::onCameraPermissionResult);
+```
+
+
+**Signature:** `Loaded(User user, String issuer, Bitmap avatar)`
+
+- **What it does:** Constructor of the holder for what one load found: the user, the issuer (or `null`) and the photo (or `null`).
+- **Inputs → output:** three values → `Loaded`.
+- **Called by:** `loadProfile`.
+- **Calls next:** nothing.
+
+```java
+Loaded(User user, String issuer, Bitmap avatar) {
+    this.user = user;
+    this.issuer = issuer;
+    this.avatar = avatar;
+}
+```
+
+
+**Signature:** `protected boolean requiresSession()`
+
+- **What it does:** Marks the screen as protected.
+- **Inputs → output:** nothing → `true`.
+- **Called by:** `BaseActivity.enforceSession`.
+- **Calls next:** nothing.
+
+```java
+@Override
+protected boolean requiresSession() {
     return true;
-```
-
-```java
-+ "avatar_uri TEXT, "
-```
-
-```java
-package com.secureauth.simulator.data;
-
-/** One row of the users table. Times are epoch milliseconds. */
-public class User {
-    public long id;
-    public String username;
-    public String passwordHash;
-    public String salt;
-    public String avatarUri;      // null until the user picks a photo
-    public int failedAttempts;
-    public long lockedUntil;      // 0 means not locked
-    public long createdAt;
 }
 ```
 
 
-#### c. Classes and methods
+**Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
 
-None exist yet.
-
-#### e. Course components used here
-
-| Course topic (Unit / Lab) | Android component | File + method | How it is used |
-|---|---|---|---|
-| **Lab 9** — camera via implicit Intent · CO2 | `MediaStore.ACTION_IMAGE_CAPTURE` / `ActivityResultContracts.TakePicture` | — | **Not covered yet** (Phase 13) |
-| Unit 3 — images stored on the device · CO2 | Copy to internal storage, downscale, `avatar_uri` | — | **Partly covered elsewhere**: the QR image is saved as a PNG in the cache (`EnrollActivity.writeQrToCache`); a user photo is not |
-| Unit 3 — displaying images | `ImageView` | — | Covered by the QR code in `EnrollActivity`, not by a profile photo |
-
-#### f. Explain it simply (what to say in the viva)
-
-- "The Profile screen with camera and gallery is **planned but not built yet**; the Dashboard menu item is a placeholder toast."
-- "The database is already prepared: `users.avatar_uri` is a nullable text column meant to hold the path of the saved photo."
-- "Our camera-style code today is the QR image: we create a `Bitmap`, save a PNG in the app's cache and share it through a `FileProvider`. A profile photo would reuse the same `FileProvider` idea."
-- "The plan is to use the Activity Result contracts `TakePicture` and `PickVisualMedia` (no `startActivityForResult`), and to ask for the camera permission only when the user taps *Take photo*."
-
-#### g. Likely viva questions
-
-1. **Why would you use `ActivityResultContracts.TakePicture` with a `FileProvider` URI instead of reading the small thumbnail the camera returns?** — The thumbnail is tiny; giving the camera app a `content://` URI from our `FileProvider` lets it write the full-size picture into a file we own, which we can then downscale and keep.
-2. **Why copy the chosen image into internal storage?** — A gallery `Uri` can disappear or lose permission; our own copy is private to the app and stays available.
-3. **Is the profile feature in this version?** — No. The honest answer is that it is Phase 13 and not built; the Dashboard shows a "coming in a later phase" toast, and `users.avatar_uri` is reserved for it.
-
----
-
-### 4.13 Settings — not built yet
-
-> **Status: NOT IMPLEMENTED.** There is no `SettingsActivity`. The Dashboard menu item is a placeholder toast.
-
-#### a. Purpose (planned)
-
-Per the plan: Spinners for digits (6/8), period (30/60 s) and algorithm (SHA1/SHA256) with a warning that non-default values may not work in Google Authenticator and need re-enrollment; a `TimePickerDialog` for the auto-lock time (1–30 min); a check box "Record login location"; all saved in `SharedPreferences`.
-
-#### b. Files involved — what exists today
-
-| What | Where | State |
-|---|---|---|
-| Menu entry "Settings" (placeholder toast) | `menu_dashboard.xml` (`action_settings`), `DashboardActivity.onOptionsItemSelected` | Exists |
-| Auto-lock setting is **already read** (key `auto_lock_ms`, default 5 min, clamped to 1–30 min) | `SessionManager.getAutoLockMs` | Reader exists, **no writer** |
-| "Record login location" setting is **already read** (key `record_location`, default `true`) | `LocationHelper.isRecordingEnabled` | Reader exists, **no writer** |
-| Per-account `digits`, `period`, `algo` columns | `totp_accounts`; `TotpAccount` | Exist, but `EnrollActivity` always uses 6 / 30 / `HmacSHA1` |
-| `SettingsActivity`, Spinners, `TimePickerDialog` | — | **Do not exist** |
-
-The two real readers that wait for a Settings screen:
-
-**Signature:** `public static long getAutoLockMs(Context context)`
-
-- **What it does:** Reads `auto_lock_ms` from `secureauth_prefs`, default 5 minutes, clamped to 1–30 minutes.
-- **Inputs → output:** `Context` → ms.
-- **Called by:** `BiometricGateActivity.completeLogin`.
-- **Calls next:** `SharedPreferences.getLong`.
+- **What it does:** Requires a session, takes the user id from it, restores the camera file path after a rotation, builds the screen with a toolbar and Up arrow, and wires **Change photo**.
+- **Inputs → output:** saved state → nothing.
+- **Called by:** Android, after `DashboardActivity.onOptionsItemSelected`.
+- **Calls next:** `enforceSession`, `SessionManager.getUserId`, `showPhotoChoices`, `loadProfile`.
 
 ```java
-/** The auto-lock time from Settings (default 5 minutes), kept inside 1 to 30 minutes. */
-public static long getAutoLockMs(Context context) {
-    long saved = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getLong(PREF_AUTO_LOCK_MS, DEFAULT_AUTO_LOCK_MS);
-    return Math.max(MIN_AUTO_LOCK_MS, Math.min(MAX_AUTO_LOCK_MS, saved));
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    if (!enforceSession()) {
+        return;
+    }
+    userId = SessionManager.getInstance().getUserId();
+    if (savedInstanceState != null) {
+        cameraFilePath = savedInstanceState.getString(STATE_CAMERA_FILE);
+    }
+
+    binding = ActivityProfileBinding.inflate(getLayoutInflater());
+    setContentView(binding.getRoot());
+    applySystemBarPadding(binding.profileRoot);
+    setSupportActionBar(binding.toolbar);
+    if (getSupportActionBar() != null) {
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    }
+
+    DbHelper db = DbHelper.getInstance(this);
+    userDao = new UserDao(db);
+    accountDao = new TotpAccountDao(db);
+
+    binding.buttonChangePhoto.setOnClickListener(v -> showPhotoChoices());
+    loadProfile();
 }
 ```
 
 
-**Signature:** `public boolean isRecordingEnabled()`
+**Signature:** `protected void onSaveInstanceState(Bundle outState)`
 
-- **What it does:** Reads `record_location` from `secureauth_prefs`, default `true`.
-- **Inputs → output:** nothing → `boolean`.
-- **Called by:** `requestCurrentLocation`, `BaseActivity.ensureLocationPermission`.
-- **Calls next:** `SharedPreferences.getBoolean`.
+- **What it does:** Saves the path of the file the camera is writing to, so a rotation while the camera is open does not lose it.
+- **Inputs → output:** `Bundle` → nothing.
+- **Called by:** Android.
+- **Calls next:** `Bundle.putString`.
 
 ```java
-/** The "Record login location" setting. On by default. */
-public boolean isRecordingEnabled() {
-    return prefs().getBoolean(PREF_RECORD_LOCATION, true);
+@Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    outState.putString(STATE_CAMERA_FILE, cameraFilePath);
 }
 ```
 
 
-The hard-coded defaults that Settings would replace in `EnrollActivity`: the `settings` field is a `TotpAccount` object whose field initialisers are the defaults:
+**Signature:** `private void loadProfile()`
+
+- **What it does:** In the background reads the user, the issuer of their first authenticator and a copy of the photo (up to 512 px), then shows them.
+- **Inputs → output:** nothing → `Loaded` to `showProfile`.
+- **Called by:** `onCreate`, `savePhoto`.
+- **Calls next:** `UserDao.getById`, `TotpAccountDao.listForUser`, `AvatarStore.load`.
 
 ```java
-// Holds the default settings (SHA-1, 6 digits, 30 s) that Google Authenticator expects
-private final TotpAccount settings = new TotpAccount();
-```
-
-```java
-public int digits = 6;
-public int period = 30;
-public String algo = "HmacSHA1";
-```
-
-
-#### e. Course components used here
-
-| Course topic (Unit / Lab) | Android component | File + method | How it is used |
-|---|---|---|---|
-| Unit 2 — **spinner** | `Spinner` + adapter | — | **Not covered yet** (Phase 14) |
-| **Lab 6** — time picker | `TimePickerDialog` | — | **Not covered yet** (the date picker half of Lab 6 *is* covered in `LoginHistoryActivity`) |
-| Unit 2 — check boxes | `CheckBox` | — | The register screen has a check box; the Settings check box does not exist yet |
-| Data storage | `SharedPreferences` | `SessionManager.getAutoLockMs`, `LocationHelper.isRecordingEnabled`, `DeviceTrust`, `LocationHelper.markAsked` | **Reading/writing preferences works today**, but the Settings keys are never written |
-
-#### f. Explain it simply (what to say in the viva)
-
-- "Settings is planned for Phase 14 and is not built; the menu item shows a toast."
-- "The rest of the app is already prepared for it: the auto-lock time and the 'record location' switch are read from preferences with sensible defaults, so the app works today with 5 minutes and location on."
-- "The code length, period and algorithm are columns of the `totp_accounts` table, so a Settings screen would only need to pass different values into enrollment."
-- "Google Authenticator supports 6 digits, 30 seconds and SHA-1 reliably, which is why those are the fixed defaults now."
-
-#### g. Likely viva questions
-
-1. **What does the user control today about auto-lock and location?** — Nothing in the UI. The auto-lock time is 5 minutes and location recording is on by default; both are read from `SharedPreferences` and are ready for the Settings screen.
-2. **Why would a non-default digits/period/algorithm need re-enrollment?** — The authenticator app stores those parameters when it scans the QR; changing them in our app would give different codes than the authenticator shows, so the user must enroll again.
-3. **Why default to SHA-1, 6 digits, 30 seconds?** — That is what Google Authenticator and most authenticator apps expect; RFC 6238's default is also 30 s and HMAC-SHA-1.
-
----
-
-### 4.14 Help (WebView) — not built yet
-
-> **Status: NOT IMPLEMENTED.** There is no `HelpActivity`, no `assets/` folder, no `help.html`, and the manifest has **no `INTERNET` permission**. The menu item is a placeholder toast.
-
-#### a. Purpose (planned)
-
-Per the plan: a `WebView` showing a local page `assets/help.html` that explains how TOTP works (with a simple HTML/CSS diagram) and, on a second button, the online RFC 6238 page, with a `WebViewClient` so links stay in the app, a progress bar and back navigation inside the web page.
-
-#### b. Files involved — what exists today
-
-| What | Where | State |
-|---|---|---|
-| Menu entry "Help" (placeholder toast) | `menu_dashboard.xml` (`action_help`), `DashboardActivity.onOptionsItemSelected` | Exists |
-| `app/src/main/assets/` folder and `help.html` | — | **Do not exist** |
-| `INTERNET` permission, `HelpActivity`, `WebView` layout | — | **Do not exist** |
-
-```java
-// These screens are built in later phases
-showToast(getString(R.string.coming_later, item.getTitle()));
-return true;
+private void loadProfile() {
+    final Context appContext = getApplicationContext();
+    runInBackground(() -> {
+        User user = userDao.getById(userId);
+        if (user == null) {
+            return null;
+        }
+        List<TotpAccount> accounts = accountDao.listForUser(userId);
+        String issuer = accounts.isEmpty() ? null : accounts.get(0).issuer;
+        Bitmap avatar = AvatarStore.load(appContext, user.avatarUri, AvatarStore.MAX_SIDE_PX);
+        return new Loaded(user, issuer, avatar);
+    }, this::showProfile);
+}
 ```
 
 
-#### c. Classes and methods
+**Signature:** `private void showProfile(@Nullable Loaded loaded)`
 
-None exist yet.
+- **What it does:** Fills the texts ("Member since <date>", "Authenticator: SecureAuth" or "not set up") and the round photo or the placeholder, each with a spoken description.
+- **Inputs → output:** `Loaded` or `null` (then the screen closes) → nothing.
+- **Called by:** `runInBackground` (after `loadProfile`).
+- **Calls next:** `DateFormat.getDateInstance`, `ImageView.setImageBitmap`.
 
-#### e. Course components used here
+```java
+private void showProfile(@Nullable Loaded loaded) {
+    if (loaded == null) {
+        finish();
+        return;
+    }
+    binding.textUsername.setText(loaded.user.username);
+    binding.textMemberSince.setText(getString(R.string.profile_member_since,
+            DateFormat.getDateInstance(DateFormat.LONG).format(new Date(loaded.user.createdAt))));
+    binding.textIssuer.setText(loaded.issuer == null
+            ? getString(R.string.profile_not_enrolled)
+            : getString(R.string.profile_authenticator, loaded.issuer));
 
-| Course topic (Unit / Lab) | Android component | File + method | How it is used |
-|---|---|---|---|
-| **Lab 5** — WebView | `WebView`, `WebViewClient` | — | **Not covered yet** (Phase 14) |
-| Unit 2 — menus | Options menu | `DashboardActivity.onOptionsItemSelected` | The menu entry exists; its target does not |
+    if (loaded.avatar == null) {
+        binding.imageAvatar.setImageResource(R.drawable.ic_avatar_placeholder);
+        binding.imageAvatar.setContentDescription(getString(R.string.cd_avatar_none));
+    } else {
+        binding.imageAvatar.setImageBitmap(loaded.avatar);
+        binding.imageAvatar.setContentDescription(getString(R.string.cd_avatar));
+    }
+}
+```
 
-#### f. Explain it simply (what to say in the viva)
 
-- "The Help screen with a `WebView` is planned but not written."
-- "Everything else in the app works offline and the manifest has no internet permission; the planned online RFC page would be the only reason to add `INTERNET`."
-- "A `WebView` is a small browser inside our screen; the local help page would be loaded from the app's `assets` folder, so it works without a network."
+**Signature:** `private void showPhotoChoices()`
 
-#### g. Likely viva questions
+- **What it does:** A list dialog: *Take photo* (only if the phone has any camera: `FEATURE_CAMERA_ANY`) and *Choose from gallery*.
+- **Inputs → output:** nothing.
+- **Called by:** the **Change photo** button.
+- **Calls next:** `MaterialAlertDialogBuilder.setItems`, `startCamera`, `startGallery`.
 
-1. **What is a `WebView` and why use a `WebViewClient`?** — A `WebView` renders web content inside an Activity. Without a `WebViewClient`, tapping a link opens the system browser; setting one makes links load inside the same `WebView`.
-2. **Why load the help page from `assets`?** — It ships inside the APK, needs no network or permission and cannot change after release.
-3. **Would adding the RFC page affect the "offline-only" claim?** — Yes: it would need the `INTERNET` permission and would be the only online feature; that trade-off is why the plan marks it as the second, optional page.
+```java
+/** "Take photo" (only if the phone has a camera) or "Choose from gallery". */
+private void showPhotoChoices() {
+    boolean hasCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+    String[] items = hasCamera
+            ? new String[]{getString(R.string.photo_take), getString(R.string.photo_gallery)}
+            : new String[]{getString(R.string.photo_gallery)};
 
----
+    new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.change_photo_title)
+            .setItems(items, (dialog, which) -> {
+                boolean camera = hasCamera && which == 0;
+                if (camera) {
+                    startCamera();
+                } else {
+                    startGallery();
+                }
+            })
+            .setNegativeButton(R.string.button_cancel, null)
+            .show();
+}
+```
 
-### 4.15 Broadcast receivers — not built yet
 
-> **Status: NOT IMPLEMENTED.** The package `receiver/` exists but contains only a `package-info.java` comment. There is no `AirplaneModeReceiver`, no `ScreenOffReceiver`, and `BaseActivity` does not register any receiver.
+**Signature:** `private void startGallery()`
 
-#### a. Purpose (planned)
+- **What it does:** Launches the system photo picker for images only; if there is no picker at all, shows an error toast.
+- **Inputs → output:** nothing.
+- **Called by:** `showPhotoChoices`.
+- **Calls next:** `galleryLauncher.launch(PickVisualMediaRequest...)`.
 
-Per the plan: `AirplaneModeReceiver` would show "Offline: TOTP still works — it only needs the clock" when airplane mode turns on; `ScreenOffReceiver` would end the session when the screen turns off (audit event `AUTO_LOCK`). Both would be registered dynamically in `BaseActivity.onStart/onStop` with the correct Android 14 export flags.
+```java
+private void startGallery() {
+    try {
+        galleryLauncher.launch(new PickVisualMediaRequest.Builder()
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE)
+                .build());
+    } catch (ActivityNotFoundException e) {
+        showToast(R.string.photo_failed); // no picker or file manager at all
+    }
+}
+```
 
-#### b. Files involved — what exists today
 
-| What | Where | State |
-|---|---|---|
-| The empty package | `app/src/main/java/com/secureauth/simulator/receiver/package-info.java` | Exists (comment only) |
-| `AuditEvent.AUTO_LOCK` | `AuditEvent.java` | **Does not exist** (no such constant) |
-| Auto-lock **by time** | `SessionManager`, `BaseActivity.enforceSession`, `DashboardActivity.tick` | **Works today** (see below) |
+**Signature:** `private void startCamera()`
+
+- **What it does:** If the CAMERA permission is already granted, starts the camera. Otherwise explains first in a dialog ("The camera is only used to take your profile photo"), and only after **Allow** shows Android's permission dialog; **Not now** leaves everything unchanged.
+- **Inputs → output:** nothing.
+- **Called by:** `showPhotoChoices`.
+- **Calls next:** `ContextCompat.checkSelfPermission`, `launchCamera`, `cameraPermissionLauncher.launch`.
 
 ```java
 /**
- * Broadcast receivers: AirplaneModeReceiver and ScreenOffReceiver (Phase 14).
+ * Android refuses to start the camera app for an app that has the CAMERA permission in its
+ * manifest but was not given it, so it is asked for here. A short explanation comes BEFORE the
+ * system dialog, the same way as for location; a "no" just points to the gallery.
  */
-package com.secureauth.simulator.receiver;
+private void startCamera() {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED) {
+        launchCamera();
+        return;
+    }
+    new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.camera_rationale_title)
+            .setMessage(R.string.camera_rationale_message)
+            .setPositiveButton(R.string.button_allow,
+                    (d, w) -> cameraPermissionLauncher.launch(Manifest.permission.CAMERA))
+            .setNegativeButton(R.string.button_not_now, null)
+            .show();
+}
 ```
 
 
-What *does* lock the app today is **session expiry**, not the screen turning off. `DashboardActivity.tick` checks once a second and `BaseActivity.onResume` checks whenever a protected screen returns to the foreground; both end the session and write `SESSION_EXPIRED` when the time (default 5 minutes) has passed. The two real methods ([4.3](#43-ui-foundation-and-splash), [4.7](#47-biometric-and-sessions)):
+**Signature:** `void onCameraPermissionResult(boolean granted)`
 
-**Signature:** `protected boolean enforceSession()`
+- **What it does:** The user answered the system dialog: granted → start the camera; denied → a toast pointing to the gallery.
+- **Inputs → output:** `boolean` → nothing.
+- **Called by:** the `cameraPermissionLauncher` result callback.
+- **Calls next:** `launchCamera`, `showToast`.
 
-- **What it does:** Checks the session on every protected screen; ends it and sends the user to Login when it is missing or expired.
-- **Inputs → output:** nothing → `boolean`.
-- **Called by:** `onResume`; protected screens' `onCreate`; `DashboardActivity.onStart` and `tick`.
-- **Calls next:** `SessionManager.check`, `endSession`, `goToLogin`.
+```java
+/** The user answered the system permission dialog. */
+void onCameraPermissionResult(boolean granted) {
+    if (granted) {
+        launchCamera();
+    } else {
+        showToast(R.string.photo_camera_denied);
+    }
+}
+```
+
+
+**Signature:** `private void launchCamera()`
+
+- **What it does:** Creates the file `cache/camera/profile_capture.jpg` (deleting any leftover), makes a `content://` link to it with the FileProvider, remembers its path, and starts the camera app with `TakePicture` (an **implicit Intent**, `ACTION_IMAGE_CAPTURE`).
+- **Inputs → output:** nothing.
+- **Called by:** `startCamera`, `onCameraPermissionResult`.
+- **Calls next:** `FileProvider.getUriForFile`, `cameraLauncher.launch`.
 
 ```java
 /**
- * For protected screens: checks that a valid session exists. If not, ends it (writing
- * SESSION_EXPIRED when it simply timed out) and sends the user to Login.
- * Protected screens call this at the top of onCreate and must stop if it returns false.
+ * Hands the camera app a place to write the picture. The place is a file in our cache folder,
+ * made reachable for that one app through FileProvider.
  */
-protected boolean enforceSession() {
-    if (!requiresSession()) {
-        return true;
+private void launchCamera() {
+    File dir = new File(getCacheDir(), CAMERA_DIR);
+    if (!dir.exists() && !dir.mkdirs()) {
+        showToast(R.string.photo_failed);
+        return;
     }
-    SessionDao sessions = new SessionDao(DbHelper.getInstance(this));
-    SessionManager.State state = SessionManager.getInstance()
-            .check(sessions, System.currentTimeMillis());
-    if (state == SessionManager.State.ACTIVE) {
-        return true;
-    }
+    File file = new File(dir, CAMERA_FILE);
+    file.delete(); // never show a leftover from an earlier try
+    cameraFilePath = file.getAbsolutePath();
 
-    boolean timedOut = state == SessionManager.State.EXPIRED;
-    endSession(timedOut ? AuditEvent.SESSION_EXPIRED : null);
-    if (timedOut) {
-        showToast(R.string.session_expired);
+    try {
+        Uri target = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+        cameraLauncher.launch(target);
+    } catch (ActivityNotFoundException | SecurityException e) {
+        cameraFilePath = null;
+        showToast(R.string.photo_no_camera);
     }
-    goToLogin();
+}
+```
+
+
+**Signature:** `void onPhotoPicked(@Nullable Uri picked)`
+
+- **What it does:** Gallery answer: the chosen picture's `Uri`, or `null` if the picker was closed (nothing changes).
+- **Inputs → output:** `Uri` or `null` → nothing.
+- **Called by:** the `galleryLauncher` result callback.
+- **Calls next:** `savePhoto`.
+
+```java
+/** Gallery answer: the chosen picture, or null if the picker was closed. */
+void onPhotoPicked(@Nullable Uri picked) {
+    if (picked == null) {
+        return; // cancelled: nothing changes
+    }
+    savePhoto(picked, null);
+}
+```
+
+
+**Signature:** `void onPhotoTaken(boolean taken)`
+
+- **What it does:** Camera answer: `true` if the camera app wrote a picture into our file. Cancelled (or a missing file) → the partial file is deleted and nothing changes; an answer without a pending file is ignored.
+- **Inputs → output:** `boolean` → nothing.
+- **Called by:** the `cameraLauncher` result callback.
+- **Calls next:** `File.delete`, `savePhoto`.
+
+```java
+/** Camera answer: true if the camera app wrote a picture to the file we gave it. */
+void onPhotoTaken(boolean taken) {
+    String path = cameraFilePath;
+    cameraFilePath = null;
+    if (path == null) {
+        return;
+    }
+    File file = new File(path);
+    if (!taken || !file.isFile()) {
+        file.delete(); // cancelled: remove the empty or partial file
+        return;
+    }
+    savePhoto(Uri.fromFile(file), file);
+}
+```
+
+
+**Signature:** `private void savePhoto(Uri source, @Nullable File temporary)`
+
+- **What it does:** Disables the button, then in the background: `AvatarStore.saveFrom` → read the user's previous avatar path → `UserDao.setAvatarUri(newPath)` → `AvatarStore.delete(previous)`; the camera's temporary file is always deleted. Then a toast ("Profile photo updated" or "That file could not be used as a photo") and a reload.
+- **Inputs → output:** source `Uri`, temporary file or `null` → nothing.
+- **Called by:** `onPhotoPicked`, `onPhotoTaken`.
+- **Calls next:** `AvatarStore.saveFrom/delete`, `UserDao.getById/setAvatarUri`, `loadProfile`.
+
+```java
+/**
+ * Copies the picture into private storage and records it for this user, off the UI thread.
+ * {@code temporary} (may be null) is the camera's file, deleted once it has been copied.
+ */
+private void savePhoto(Uri source, @Nullable File temporary) {
+    final Context appContext = getApplicationContext();
+    binding.buttonChangePhoto.setEnabled(false);
+    runInBackground(() -> {
+        try {
+            String saved = AvatarStore.saveFrom(appContext, userId, source);
+            if (saved == null) {
+                return false;
+            }
+            User user = userDao.getById(userId);
+            String previous = user == null ? null : user.avatarUri;
+            userDao.setAvatarUri(userId, saved);
+            AvatarStore.delete(appContext, previous); // the old photo is no longer needed
+            return true;
+        } finally {
+            if (temporary != null) {
+                temporary.delete();
+            }
+        }
+    }, ok -> {
+        binding.buttonChangePhoto.setEnabled(true);
+        showToast(ok ? R.string.photo_updated : R.string.photo_failed);
+        if (ok) {
+            loadProfile();
+        }
+    });
+}
+```
+
+
+**Signature:** `public boolean onOptionsItemSelected(MenuItem item)`
+
+- **What it does:** The Up arrow closes the screen.
+- **Inputs → output:** `MenuItem` → `true` if handled.
+- **Called by:** Android.
+- **Calls next:** `finish`.
+
+```java
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId() == android.R.id.home) {
+        finish();
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+```
+
+
+##### Manifest entries, FileProvider paths and layout
+
+```xml
+<!-- Only used to take the profile photo (Profile > Change photo). It is asked for at that moment,
+     with an explanation first, and the photo can also come from the gallery. The picture itself
+     is taken by the phone's own camera app. (The QR library also declares this permission, so
+     it would be in the app either way.) -->
+<uses-permission android:name="android.permission.CAMERA" />
+
+<!-- The camera is optional: the profile photo can also come from the gallery -->
+<uses-feature
+    android:name="android.hardware.camera.any"
+    android:required="false" />
+
+<!-- Lets the app ask "is there a camera app?" (Android 11+ hides other apps otherwise) -->
+<queries>
+    <intent>
+        <action android:name="android.media.action.IMAGE_CAPTURE" />
+    </intent>
+</queries>
+```
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only cache/qr (the QR image we share) and cache/camera (where the camera app writes the
+     profile photo) can be reached through FileProvider, nothing else in app storage -->
+<paths>
+    <cache-path
+        name="qr"
+        path="qr/" />
+    <cache-path
+        name="camera"
+        path="camera/" />
+</paths>
+```
+
+```xml
+<!-- Circular: the shape overlay rounds the corners all the way ("full") -->
+<com.google.android.material.imageview.ShapeableImageView
+    android:id="@+id/image_avatar"
+    android:layout_width="160dp"
+    android:layout_height="160dp"
+    android:layout_marginTop="16dp"
+    android:contentDescription="@string/cd_avatar_none"
+    android:scaleType="centerCrop"
+    android:src="@drawable/ic_avatar_placeholder"
+    app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Full" />
+```
+
+
+The photo is a `ShapeableImageView`: the shape overlay `Corner.Full` rounds every corner all the way, so a square image is drawn as a circle.
+
+#### e. Course components used here
+
+| Course topic (Unit / Lab) | Android component | File + method | How it is used |
+|---|---|---|---|
+| **Lab 9** — camera via implicit Intent · CO2 | `ActivityResultContracts.TakePicture` (starts `MediaStore.ACTION_IMAGE_CAPTURE`), `FileProvider` | `ProfileActivity.launchCamera`, `onPhotoTaken` | The phone's camera app writes the picture into a file we own |
+| Unit 3 — **images stored on the device** · CO2 | Private files folder, `Bitmap`, `JPEG` | `AvatarStore.saveFrom`, `load`, `delete` | The photo is kept in `files/avatars/`, small and square |
+| Unit 3 — displaying images | `ShapeableImageView`, `RoundedBitmapDrawable` | `activity_profile.xml`; `DashboardActivity.showAvatar` | A round avatar on Profile and in the toolbar |
+| Unit 2 / Lab 3 — implicit Intents · CO2 | `ACTION_IMAGE_CAPTURE`, `PickVisualMedia` | `launchCamera`, `startGallery` | Camera and gallery are other apps' screens |
+| Unit 4-style runtime permission | `Manifest.permission.CAMERA`, `ActivityResultContracts.RequestPermission` | `startCamera`, `onCameraPermissionResult` | Explain first, then ask; a "no" leaves the gallery option |
+| Unit 2 — pop-up dialogs | `AlertDialog` with a list (`setItems`) and a rationale dialog | `showPhotoChoices`, `startCamera` | Choose the source; explain the camera permission |
+| Unit 6 SQLite · Lab 7 (Update) · CO3 | `UserDao.setAvatarUri` | `ProfileActivity.savePhoto` | Saves the photo path |
+
+#### f. Explain it simply
+
+- On Profile you see your name, when you joined, which authenticator you use and a round picture.
+- *Change photo* asks "camera or gallery?". For the camera the app first explains why it needs permission; the phone's own camera app takes the picture and writes it into a file that our app prepared.
+- Phone photos are huge and sideways (the camera only writes a note saying "this side up"), so our app turns the picture upright, cuts the middle square, shrinks it to 512 pixels and saves it inside the app's private folder. Only its path is stored in the database.
+- The old photo file is deleted, so storage does not fill up.
+- The Dashboard toolbar shows the same photo as a small circle; tapping it opens Profile.
+
+#### g. Likely viva questions
+
+1. **How does the camera work without you writing camera code, and why a `FileProvider`?** — `ActivityResultContracts.TakePicture` starts the phone's camera app with an implicit `ACTION_IMAGE_CAPTURE` Intent and an output `Uri`. The camera app cannot write into our private cache, so the `Uri` is a `content://` link from our `FileProvider` (limited to `cache/camera/` by `file_paths.xml`). The contract answers `true` if a picture was written. CAMERA permission is asked only when the user taps *Take photo*, after an explanation.
+2. **Why do you shrink, rotate and crop the picture, and what is `inSampleSize`?** — A phone photo is several MB and its orientation is only an EXIF tag. We decode a shrunk copy (`inSampleSize` = a power of two so only a fraction of the pixels is decoded), rotate it upright, cut a centred square, scale to ≤ 512 px and save a JPEG of a few dozen KB.
+3. **What stops a changed database value from making the app read some other file?** — `AvatarStore.load` and `delete` call `isInside`, which resolves `..` and checks the canonical path is inside `files/avatars/`; anything else returns `null` or is ignored.
+
+---
+
+### 4.13 Settings
+
+#### a. Purpose
+
+`SettingsActivity` lets the user change what can be changed: **Spinners** for the code length (6 or 8 digits), how often it changes (30 or 60 s) and the algorithm (SHA-1 or SHA-256); a **TimePickerDialog** for the auto-lock time (1–30 minutes); and a **check box** "Record login location". Each change is saved at once in `SharedPreferences`. The authenticator choices apply to the **next** time an authenticator is set up (the secret already shared with the authenticator app was made with the old values); a red warning appears whenever a choice differs from what Google Authenticator expects, and a button starts enrollment again.
+
+#### b. Files involved
+
+| Kind | Files |
+|---|---|
+| Java | `app/src/main/java/com/secureauth/simulator/ui/SettingsActivity.java`, `app/src/main/java/com/secureauth/simulator/data/AppSettings.java` |
+| Layout | `app/src/main/res/layout/activity_settings.xml` |
+| Resources | `strings.xml` (Settings group) |
+| Used by | `EnrollActivity.onCreate` (digits, period, algorithm), `SessionManager.getAutoLockMs` (auto-lock), `LocationHelper.isRecordingEnabled` (location) |
+| Opened by | Dashboard options menu → *Settings* |
+
+#### c. Classes and methods
+
+##### Class `AppSettings` (one owner of the preference keys)
+
+**File:** `app/src/main/java/com/secureauth/simulator/data/AppSettings.java` (144 lines)
+
+Owns the key names, the allowed values and the defaults, so the Settings screen and the code that uses a setting cannot disagree. **Every getter checks what it reads**: a missing or damaged value falls back to the default instead of reaching the TOTP engine or the session timer. The rules (the first six methods) use no Android classes, so they are unit tested on the PC (`AppSettingsRulesTest`).
+
+**Signature:** `public static boolean isValidDigits(int digits)`
+
+- **What it does:** True for 6 or 8.
+- **Inputs → output:** `int` → `boolean`.
+- **Called by:** `getDigits`, `setDigits`; tests.
+- **Calls next:** `contains`.
+
+```java
+public static boolean isValidDigits(int digits) {
+    return contains(DIGIT_CHOICES, digits);
+}
+```
+
+
+**Signature:** `public static boolean isValidPeriod(int period)`
+
+- **What it does:** True for 30 or 60.
+- **Inputs → output:** `int` → `boolean`.
+- **Called by:** `getPeriod`, `setPeriod`; tests.
+- **Calls next:** `contains`.
+
+```java
+public static boolean isValidPeriod(int period) {
+    return contains(PERIOD_CHOICES, period);
+}
+```
+
+
+**Signature:** `public static boolean isValidAlgo(String algo)`
+
+- **What it does:** True for `HmacSHA1` or `HmacSHA256`.
+- **Inputs → output:** `String` → `boolean`.
+- **Called by:** `getAlgo`, `setAlgo`; tests.
+- **Calls next:** nothing.
+
+```java
+public static boolean isValidAlgo(String algo) {
+    return TotpEngine.ALGO_SHA1.equals(algo) || TotpEngine.ALGO_SHA256.equals(algo);
+}
+```
+
+
+**Signature:** `public static long clampAutoLockMs(long ms)`
+
+- **What it does:** Keeps an auto-lock time inside 1 to 30 minutes.
+- **Inputs → output:** ms → ms.
+- **Called by:** `getAutoLockMs`, `setAutoLockMs`.
+- **Calls next:** `Math.max/min`.
+
+```java
+/** Keeps an auto-lock time inside 1 to 30 minutes. */
+public static long clampAutoLockMs(long ms) {
+    return Math.max(MIN_AUTO_LOCK_MS, Math.min(MAX_AUTO_LOCK_MS, ms));
+}
+```
+
+
+**Signature:** `public static boolean differsFromDefaults(int digits, int period, String algo)`
+
+- **What it does:** True if any of the three differs from what Google Authenticator expects (6, 30, SHA-1).
+- **Inputs → output:** three values → `boolean`.
+- **Called by:** `SettingsActivity.showWarningIfNeeded`; tests.
+- **Calls next:** nothing.
+
+```java
+/** True if any of the three differs from what Google Authenticator expects. */
+public static boolean differsFromDefaults(int digits, int period, String algo) {
+    return digits != DEFAULT_DIGITS || period != DEFAULT_PERIOD || !DEFAULT_ALGO.equals(algo);
+}
+```
+
+
+**Signature:** `public static long autoLockMsFromPicker(int hour, int minute)`
+
+- **What it does:** Turns the time-picker answer into milliseconds, or `-1` if it is outside 1 to 30 minutes. The picker has no seconds and stops at 23 hours, so it is used as "hours : minutes": 0:01 to 0:30.
+- **Inputs → output:** hour, minute → ms or −1.
+- **Called by:** `SettingsActivity.onAutoLockPicked`.
+- **Calls next:** nothing.
+
+```java
+/**
+ * The time-picker answer (hour, minute) as a number of milliseconds, or -1 if it is outside
+ * 1 to 30 minutes. The picker has no seconds, so the whole range is made of minutes: 0:01 to 0:30.
+ */
+public static long autoLockMsFromPicker(int hour, int minute) {
+    long totalMinutes = hour * 60L + minute;
+    if (totalMinutes < 1 || totalMinutes > 30) {
+        return -1;
+    }
+    return totalMinutes * 60_000L;
+}
+```
+
+
+**Signature:** `private static boolean contains(int[] values, int wanted)`
+
+- **What it does:** Linear search in a small array.
+- **Inputs → output:** array, value → `boolean`.
+- **Called by:** `isValidDigits`, `isValidPeriod`.
+- **Calls next:** nothing.
+
+```java
+private static boolean contains(int[] values, int wanted) {
+    for (int v : values) {
+        if (v == wanted) {
+            return true;
+        }
+    }
     return false;
 }
 ```
 
 
-#### c. Classes and methods
+**Signature:** `private static SharedPreferences prefs(Context context)`
 
-None exist yet (apart from the methods above, which belong to other components).
+- **What it does:** Opens `secureauth_prefs` with the application context.
+- **Inputs → output:** `Context` → `SharedPreferences`.
+- **Called by:** every getter and setter.
+- **Calls next:** `getSharedPreferences`.
+
+```java
+private static SharedPreferences prefs(Context context) {
+    return context.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+}
+```
+
+
+**Signature:** `public static int getDigits(Context context)`
+
+- **What it does:** The saved code length if valid, else 6.
+- **Inputs → output:** `Context` → `int`.
+- **Called by:** `EnrollActivity.onCreate`; `SettingsActivity.setUpAuthenticatorSpinners`, `showWarningIfNeeded`.
+- **Calls next:** `prefs`, `isValidDigits`.
+
+```java
+public static int getDigits(Context context) {
+    int saved = prefs(context).getInt(KEY_DIGITS, DEFAULT_DIGITS);
+    return isValidDigits(saved) ? saved : DEFAULT_DIGITS;
+}
+```
+
+
+**Signature:** `public static void setDigits(Context context, int digits)`
+
+- **What it does:** Saves the code length — only if it is one of the offered values.
+- **Inputs → output:** `Context`, digits → nothing.
+- **Called by:** the digits Spinner listener.
+- **Calls next:** `isValidDigits`, `SharedPreferences.Editor.putInt(...).apply()`.
+
+```java
+public static void setDigits(Context context, int digits) {
+    if (isValidDigits(digits)) {
+        prefs(context).edit().putInt(KEY_DIGITS, digits).apply();
+    }
+}
+```
+
+
+**Signature:** `public static int getPeriod(Context context)`
+
+- **What it does:** The saved period if valid, else 30.
+- **Inputs → output:** `Context` → `int`.
+- **Called by:** `EnrollActivity.onCreate`; `SettingsActivity`.
+- **Calls next:** `prefs`, `isValidPeriod`.
+
+```java
+public static int getPeriod(Context context) {
+    int saved = prefs(context).getInt(KEY_PERIOD, DEFAULT_PERIOD);
+    return isValidPeriod(saved) ? saved : DEFAULT_PERIOD;
+}
+```
+
+
+**Signature:** `public static void setPeriod(Context context, int period)`
+
+- **What it does:** Saves the period (only valid values).
+- **Inputs → output:** `Context`, seconds → nothing.
+- **Called by:** the period Spinner listener.
+- **Calls next:** `isValidPeriod`.
+
+```java
+public static void setPeriod(Context context, int period) {
+    if (isValidPeriod(period)) {
+        prefs(context).edit().putInt(KEY_PERIOD, period).apply();
+    }
+}
+```
+
+
+**Signature:** `public static String getAlgo(Context context)`
+
+- **What it does:** The saved algorithm if valid, else `HmacSHA1`.
+- **Inputs → output:** `Context` → `String`.
+- **Called by:** `EnrollActivity.onCreate`; `SettingsActivity`.
+- **Calls next:** `prefs`, `isValidAlgo`.
+
+```java
+public static String getAlgo(Context context) {
+    String saved = prefs(context).getString(KEY_ALGO, DEFAULT_ALGO);
+    return isValidAlgo(saved) ? saved : DEFAULT_ALGO;
+}
+```
+
+
+**Signature:** `public static void setAlgo(Context context, String algo)`
+
+- **What it does:** Saves the algorithm (only valid values).
+- **Inputs → output:** `Context`, name → nothing.
+- **Called by:** the algorithm Spinner listener.
+- **Calls next:** `isValidAlgo`.
+
+```java
+public static void setAlgo(Context context, String algo) {
+    if (isValidAlgo(algo)) {
+        prefs(context).edit().putString(KEY_ALGO, algo).apply();
+    }
+}
+```
+
+
+**Signature:** `public static long getAutoLockMs(Context context)`
+
+- **What it does:** How long a login lasts before the session must be started again; default 5 minutes, always clamped to 1–30.
+- **Inputs → output:** `Context` → ms.
+- **Called by:** `SessionManager.getAutoLockMs` (called from `BiometricGateActivity.completeLogin`); `SettingsActivity.showAutoLock`, `showAutoLockPicker`.
+- **Calls next:** `prefs`, `clampAutoLockMs`.
+
+```java
+/** How long a login lasts before the session must be started again. Default 5 minutes. */
+public static long getAutoLockMs(Context context) {
+    return clampAutoLockMs(prefs(context).getLong(KEY_AUTO_LOCK_MS, DEFAULT_AUTO_LOCK_MS));
+}
+```
+
+
+**Signature:** `public static void setAutoLockMs(Context context, long ms)`
+
+- **What it does:** Saves the auto-lock time, clamped to 1–30 minutes.
+- **Inputs → output:** `Context`, ms → nothing.
+- **Called by:** `SettingsActivity.onAutoLockPicked`.
+- **Calls next:** `clampAutoLockMs`.
+
+```java
+public static void setAutoLockMs(Context context, long ms) {
+    prefs(context).edit().putLong(KEY_AUTO_LOCK_MS, clampAutoLockMs(ms)).apply();
+}
+```
+
+
+**Signature:** `public static boolean isRecordLocation(Context context)`
+
+- **What it does:** "Record login location": on by default.
+- **Inputs → output:** `Context` → `boolean`.
+- **Called by:** `LocationHelper.isRecordingEnabled`; `SettingsActivity.setUpLocationCheckBox`.
+- **Calls next:** `prefs`.
+
+```java
+/** "Record login location". On by default. */
+public static boolean isRecordLocation(Context context) {
+    return prefs(context).getBoolean(KEY_RECORD_LOCATION, true);
+}
+```
+
+
+**Signature:** `public static void setRecordLocation(Context context, boolean record)`
+
+- **What it does:** Saves the check-box state.
+- **Inputs → output:** `Context`, `boolean` → nothing.
+- **Called by:** the check box listener in `SettingsActivity`.
+- **Calls next:** `SharedPreferences.Editor.putBoolean(...).apply()`.
+
+```java
+public static void setRecordLocation(Context context, boolean record) {
+    prefs(context).edit().putBoolean(KEY_RECORD_LOCATION, record).apply();
+}
+```
+
+
+##### Class `SettingsActivity`
+
+**File:** `app/src/main/java/com/secureauth/simulator/ui/SettingsActivity.java` (232 lines)
+
+
+**Signature:** `protected boolean requiresSession()`
+
+- **What it does:** Marks the screen as protected.
+- **Inputs → output:** nothing → `true`.
+- **Called by:** `BaseActivity.enforceSession`.
+- **Calls next:** nothing.
+
+```java
+@Override
+protected boolean requiresSession() {
+    return true;
+}
+```
+
+
+**Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
+
+- **What it does:** Requires a session, builds the screen with a toolbar and Up arrow, and sets up the spinners, the auto-lock row, the location check box and the **Set up authenticator again** button.
+- **Inputs → output:** saved state → nothing.
+- **Called by:** Android, after the Dashboard menu.
+- **Calls next:** `enforceSession`, `setUpAuthenticatorSpinners`, `setUpAutoLock`, `setUpLocationCheckBox`, `confirmSetupAgain`.
+
+```java
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    if (!enforceSession()) {
+        return;
+    }
+
+    binding = ActivitySettingsBinding.inflate(getLayoutInflater());
+    setContentView(binding.getRoot());
+    applySystemBarPadding(binding.settingsRoot);
+    setSupportActionBar(binding.toolbar);
+    if (getSupportActionBar() != null) {
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    }
+
+    setUpAuthenticatorSpinners();
+    setUpAutoLock();
+    setUpLocationCheckBox();
+    binding.buttonSetupAgain.setOnClickListener(v -> confirmSetupAgain());
+}
+```
+
+
+**Signature:** `private void setUpAuthenticatorSpinners()`
+
+- **What it does:** Builds the labels from `AppSettings` (for example "6 digits", "30 seconds", "SHA-1 (default)"), fills the three Spinners with the saved selection, shows the warning if needed, and **only then** attaches the listeners, so opening the screen is not counted as the user choosing something.
+- **Inputs → output:** nothing.
+- **Called by:** `onCreate`.
+- **Calls next:** `prepare`, `indexOf`, `showWarningIfNeeded`, `AppSettings.set*` (inside the listeners).
+
+```java
+private void setUpAuthenticatorSpinners() {
+    List<String> digitLabels = new ArrayList<>();
+    for (int d : AppSettings.DIGIT_CHOICES) {
+        digitLabels.add(getString(R.string.choice_digits, d));
+    }
+    List<String> periodLabels = new ArrayList<>();
+    for (int p : AppSettings.PERIOD_CHOICES) {
+        periodLabels.add(getString(R.string.choice_period, p));
+    }
+    List<String> algoLabels = new ArrayList<>();
+    for (String algo : AppSettings.ALGO_CHOICES) {
+        algoLabels.add(getString(algo.equals(AppSettings.DEFAULT_ALGO)
+                ? R.string.choice_sha1 : R.string.choice_sha256));
+    }
+
+    prepare(binding.spinnerDigits, digitLabels, indexOf(AppSettings.DIGIT_CHOICES, AppSettings.getDigits(this)));
+    prepare(binding.spinnerPeriod, periodLabels, indexOf(AppSettings.PERIOD_CHOICES, AppSettings.getPeriod(this)));
+    prepare(binding.spinnerAlgorithm, algoLabels, indexOf(AppSettings.ALGO_CHOICES, AppSettings.getAlgo(this)));
+    showWarningIfNeeded();
+
+    // The listeners are attached AFTER the starting choice is selected, so opening the screen
+    // does not count as the user choosing something
+    binding.spinnerDigits.setOnItemSelectedListener(new ChoiceListener(position -> {
+        AppSettings.setDigits(this, AppSettings.DIGIT_CHOICES[position]);
+        showWarningIfNeeded();
+    }));
+    binding.spinnerPeriod.setOnItemSelectedListener(new ChoiceListener(position -> {
+        AppSettings.setPeriod(this, AppSettings.PERIOD_CHOICES[position]);
+        showWarningIfNeeded();
+    }));
+    binding.spinnerAlgorithm.setOnItemSelectedListener(new ChoiceListener(position -> {
+        AppSettings.setAlgo(this, AppSettings.ALGO_CHOICES[position]);
+        showWarningIfNeeded();
+    }));
+}
+```
+
+
+**Signature:** `private void prepare(Spinner spinner, List<String> labels, int selected)`
+
+- **What it does:** Gives a Spinner an `ArrayAdapter` of the labels (the standard simple layouts) and selects the saved item without firing the listener (`setSelection(selected, false)`).
+- **Inputs → output:** spinner, labels, index → nothing.
+- **Called by:** `setUpAuthenticatorSpinners`.
+- **Calls next:** `ArrayAdapter`, `Spinner.setSelection`.
+
+```java
+private void prepare(Spinner spinner, List<String> labels, int selected) {
+    ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+    spinner.setAdapter(adapter);
+    spinner.setSelection(selected, false);
+}
+```
+
+
+**Signature:** `private static int indexOf(int[] values, int wanted)`
+
+- **What it does:** Position of a number in the offered list (0 if not found).
+- **Inputs → output:** array, value → index.
+- **Called by:** `setUpAuthenticatorSpinners`.
+- **Calls next:** nothing.
+
+```java
+private static int indexOf(int[] values, int wanted) {
+    for (int i = 0; i < values.length; i++) {
+        if (values[i] == wanted) {
+            return i;
+        }
+    }
+    return 0;
+}
+```
+
+
+**Signature:** `private static int indexOf(String[] values, String wanted)`
+
+- **What it does:** Position of a name in the offered list (0 if not found).
+- **Inputs → output:** array, value → index.
+- **Called by:** `setUpAuthenticatorSpinners`.
+- **Calls next:** `String.equals`.
+
+```java
+private static int indexOf(String[] values, String wanted) {
+    for (int i = 0; i < values.length; i++) {
+        if (values[i].equals(wanted)) {
+            return i;
+        }
+    }
+    return 0;
+}
+```
+
+
+**Signature:** `private void showWarningIfNeeded()`
+
+- **What it does:** Shows the red note under the spinners while any choice is not the Google Authenticator default (6, 30, SHA-1), and hides it otherwise.
+- **Inputs → output:** nothing.
+- **Called by:** `setUpAuthenticatorSpinners` and every spinner listener.
+- **Calls next:** `AppSettings.differsFromDefaults`.
+
+```java
+/** The red note under the spinners, shown while any choice is not the Google Authenticator default. */
+private void showWarningIfNeeded() {
+    boolean differs = AppSettings.differsFromDefaults(
+            AppSettings.getDigits(this), AppSettings.getPeriod(this), AppSettings.getAlgo(this));
+    binding.textWarning.setVisibility(differs ? View.VISIBLE : View.GONE);
+}
+```
+
+
+**Signature:** `ChoiceListener(OnChosen action)`
+
+- **What it does:** Constructor of the small helper that implements `OnItemSelectedListener`: "the user picked item number N", without the other callback a Spinner listener needs.
+- **Inputs → output:** `OnChosen` → `ChoiceListener`.
+- **Called by:** `setUpAuthenticatorSpinners`.
+- **Calls next:** nothing.
+
+```java
+ChoiceListener(OnChosen action) {
+    this.action = action;
+}
+```
+
+
+**Signature:** `void chosen(int position);`
+
+- **What it does:** The one-method interface `OnChosen`: what to do when item `position` is chosen.
+- **Inputs → output:** `int` → nothing.
+- **Called by:** `ChoiceListener.onItemSelected`.
+- **Calls next:** whatever the lambda does (save the setting, update the warning).
+
+```java
+void chosen(int position);
+```
+
+
+**Signature:** `public void onItemSelected(AdapterView<?> parent, View view, int position, long id)`
+
+- **What it does:** Passes the chosen position to the action.
+- **Inputs → output:** spinner callback arguments → nothing.
+- **Called by:** Android (when the user picks an item).
+- **Calls next:** `OnChosen.chosen`.
+
+```java
+@Override
+public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+    action.chosen(position);
+}
+```
+
+
+**Signature:** `public void onNothingSelected(AdapterView<?> parent)`
+
+- **What it does:** Intentionally empty.
+- **Inputs → output:** `AdapterView` → nothing.
+- **Called by:** Android.
+- **Calls next:** nothing.
+
+```java
+@Override
+public void onNothingSelected(AdapterView<?> parent) {
+}
+```
+
+
+**Signature:** `private void confirmSetupAgain()`
+
+- **What it does:** Asks "Set up again? You will get a new QR code. Your current authenticator stops working once you confirm a code from the new one." On **Continue** opens `EnrollActivity` (explicit Intent, with the user id **from the session**). Enrollment is allowed because the same user has a live session.
+- **Inputs → output:** nothing.
+- **Called by:** the **Set up authenticator again** button.
+- **Calls next:** `MaterialAlertDialogBuilder`, `startActivity(EnrollActivity)`, `SessionManager.getUserId`.
+
+```java
+/** The new choices only matter once a new secret is made, so offer to do that now. */
+private void confirmSetupAgain() {
+    new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.setup_again_title)
+            .setMessage(R.string.setup_again_message)
+            .setPositiveButton(R.string.button_continue, (d, w) -> startActivity(
+                    new Intent(this, EnrollActivity.class) // explicit Intent
+                            .putExtra(EnrollActivity.EXTRA_USER_ID, SessionManager.getInstance().getUserId())))
+            .setNegativeButton(R.string.button_cancel, null)
+            .show();
+}
+```
+
+
+**Signature:** `private void setUpAutoLock()`
+
+- **What it does:** Shows the current time and wires the **Change** button.
+- **Inputs → output:** nothing.
+- **Called by:** `onCreate`.
+- **Calls next:** `showAutoLock`, `showAutoLockPicker`.
+
+```java
+private void setUpAutoLock() {
+    showAutoLock();
+    binding.buttonAutolock.setOnClickListener(v -> showAutoLockPicker());
+}
+```
+
+
+**Signature:** `private void showAutoLock()`
+
+- **What it does:** Writes "Log out after 5 min" from the saved value.
+- **Inputs → output:** nothing.
+- **Called by:** `setUpAutoLock`, `onAutoLockPicked`.
+- **Calls next:** `AppSettings.getAutoLockMs`, `formatAutoLock`.
+
+```java
+private void showAutoLock() {
+    binding.textAutolock.setText(getString(R.string.settings_autolock_value,
+            formatAutoLock(AppSettings.getAutoLockMs(this))));
+}
+```
+
+
+**Signature:** `private String formatAutoLock(long ms)`
+
+- **What it does:** "5 min", or "1 min 30 s" when the time is not a whole number of minutes (string resources with placeholders).
+- **Inputs → output:** ms → `String`.
+- **Called by:** `showAutoLock`.
+- **Calls next:** `getString`.
+
+```java
+/** "5 min", or "1 min 30 s" when the time is not a whole number of minutes. */
+private String formatAutoLock(long ms) {
+    long minutes = ms / 60_000L;
+    long seconds = (ms / 1000L) % 60L;
+    return seconds == 0
+            ? getString(R.string.duration_minutes, minutes)
+            : getString(R.string.duration_minutes_seconds, minutes, seconds);
+}
+```
+
+
+**Signature:** `private void showAutoLockPicker()`
+
+- **What it does:** Opens a `TimePickerDialog` in 24-hour mode set to 0 hours and the current minutes, titled "Auto-lock time (hours : minutes)".
+- **Inputs → output:** nothing.
+- **Called by:** the **Change** button; `onAutoLockPicked` (to ask again).
+- **Calls next:** `new TimePickerDialog(...)`.
+
+```java
+/**
+ * A TimePickerDialog in 24-hour mode. It only offers hours and minutes, so it is used as
+ * "hours : minutes" for a short time: 0:01 to 0:30 is 1 to 30 minutes.
+ */
+private void showAutoLockPicker() {
+    int minutes = (int) (AppSettings.getAutoLockMs(this) / 60_000L);
+    TimePickerDialog dialog = new TimePickerDialog(this,
+            (picker, hour, minute) -> onAutoLockPicked(hour, minute), 0, minutes, true);
+    dialog.setTitle(R.string.autolock_picker_title);
+    dialog.show();
+}
+```
+
+
+**Signature:** `void onAutoLockPicked(int hour, int minute)`
+
+- **What it does:** The picker answered. Anything outside 1 to 30 minutes is refused with a toast and the picker opens again; otherwise it is saved and shown.
+- **Inputs → output:** hour, minute → nothing.
+- **Called by:** the `TimePickerDialog` listener.
+- **Calls next:** `AppSettings.autoLockMsFromPicker/setAutoLockMs`, `showToast`, `showAutoLock`.
+
+```java
+/** The picker answered. Anything outside 1 to 30 minutes is refused and the picker opens again. */
+void onAutoLockPicked(int hour, int minute) {
+    long ms = AppSettings.autoLockMsFromPicker(hour, minute);
+    if (ms < 0) {
+        showToast(R.string.autolock_range_error);
+        showAutoLockPicker();
+        return;
+    }
+    AppSettings.setAutoLockMs(this, ms);
+    showAutoLock();
+}
+```
+
+
+**Signature:** `private void setUpLocationCheckBox()`
+
+- **What it does:** Sets the check box from the saved value and saves every change.
+- **Inputs → output:** nothing.
+- **Called by:** `onCreate`.
+- **Calls next:** `AppSettings.isRecordLocation/setRecordLocation`.
+
+```java
+private void setUpLocationCheckBox() {
+    binding.checkboxRecordLocation.setChecked(AppSettings.isRecordLocation(this));
+    binding.checkboxRecordLocation.setOnCheckedChangeListener(
+            (button, checked) -> AppSettings.setRecordLocation(this, checked));
+}
+```
+
+
+**Signature:** `public boolean onOptionsItemSelected(MenuItem item)`
+
+- **What it does:** The Up arrow closes the screen.
+- **Inputs → output:** `MenuItem` → `true` if handled.
+- **Called by:** Android.
+- **Calls next:** `finish`.
+
+```java
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId() == android.R.id.home) {
+        finish();
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+```
+
+
+##### Layout (key parts)
+
+```xml
+<Spinner
+    android:id="@+id/spinner_digits"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="48dp" />
+<!-- ... -->
+<!-- Shown only while a choice differs from the Google Authenticator defaults -->
+<TextView
+    android:id="@+id/text_warning"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="12dp"
+    android:background="?attr/colorErrorContainer"
+    android:padding="12dp"
+    android:text="@string/settings_warning"
+    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+    android:textColor="?attr/colorOnErrorContainer"
+    android:visibility="gone" />
+<!-- ... -->
+<com.google.android.material.checkbox.MaterialCheckBox
+    android:id="@+id/checkbox_record_location"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:minHeight="48dp"
+    android:text="@string/checkbox_record_location" />
+```
+
+
+The three `Spinner`s are plain framework spinners with a minimum height of 48 dp (the touch-target size); the warning is hidden (`visibility="gone"`) until a choice differs from the defaults.
 
 #### e. Course components used here
 
 | Course topic (Unit / Lab) | Android component | File + method | How it is used |
 |---|---|---|---|
-| **Lab 10** — broadcast receiver | `BroadcastReceiver`, `registerReceiver`, `IntentFilter` (`ACTION_AIRPLANE_MODE_CHANGED`, `ACTION_SCREEN_OFF`) | — | **Not covered yet** (Phase 14) |
-| Unit 2 — multiscreen / Android lifecycle | `onStart` / `onStop` registration | — | Planned in `BaseActivity` |
-| Auto-lock | Time-based session expiry | `SessionManager.check`, `BaseActivity.enforceSession`, `DashboardActivity.tick` | **Works** (the screen-off trigger does not) |
+| Unit 2 — **spinner** · CO1 | `Spinner`, `ArrayAdapter`, `OnItemSelectedListener` | `SettingsActivity.setUpAuthenticatorSpinners`, `prepare`, `ChoiceListener`; `activity_settings.xml` | Code length, period and algorithm |
+| **Lab 6** — time picker | `TimePickerDialog` | `SettingsActivity.showAutoLockPicker`, `onAutoLockPicked` | Auto-lock time, used as hours : minutes (0:01–0:30) |
+| Unit 2 — check boxes | `MaterialCheckBox` | `SettingsActivity.setUpLocationCheckBox` | "Record login location" |
+| Unit 2 — pop-up dialogs | `AlertDialog` | `SettingsActivity.confirmSetupAgain` | Confirm starting a new enrollment |
+| Unit 2 — toasts | `Toast` | `SettingsActivity.onAutoLockPicked` | "Choose between 0:01 and 0:30" |
+| Unit 2 — multiscreen · Lab 3 explicit Intent | Explicit `Intent` with `EXTRA_USER_ID` | `SettingsActivity.confirmSetupAgain` | Opens `EnrollActivity` |
+| Data storage | `SharedPreferences` (`secureauth_prefs`) | `AppSettings` | Persists the five settings with validation on read |
 
-#### f. Explain it simply (what to say in the viva)
+#### f. Explain it simply
 
-- "A broadcast receiver is a listener for system announcements such as 'airplane mode changed' or 'the screen turned off'. We have not built ours yet."
-- "The app still locks itself: after 5 minutes the session expires, and the next screen check sends you to Login."
-- "Planned: when the screen goes off, end the session immediately; when airplane mode is switched on, tell the user that codes still work because TOTP needs only the clock."
+- Settings has three drop-down lists (spinners) for how the 6-digit code is made, a button that opens a clock pop-up for how long the app stays unlocked, and a tick box for saving your location.
+- Every change is saved the moment you make it, in a small settings file on the phone.
+- The code settings do **not** change the authenticator you already have: that secret was made with the old values and the authenticator app already learned them from the QR code. They apply the next time you set up an authenticator, so a button offers to do that now. If a choice is not what Google Authenticator expects, a red note says so.
+- The clock pop-up only knows hours and minutes, so we use it as "0 hours : 5 minutes". Anything outside 1 to 30 minutes is refused.
+- When the app reads a setting it checks it first, so a damaged value falls back to the safe default.
 
 #### g. Likely viva questions
 
-1. **What is a `BroadcastReceiver`, and why register it in code instead of the manifest?** — It receives system or app broadcasts. `ACTION_SCREEN_OFF` and `ACTION_AIRPLANE_MODE_CHANGED` cannot be declared in the manifest on modern Android, so they must be registered dynamically (for example in `onStart`) and unregistered in `onStop`.
-2. **Why does TOTP keep working in airplane mode?** — The code depends only on the secret and the clock; no network is used.
-3. **What protects the app today if the user leaves it unlocked?** — The auto-lock: the session token expires after the configured time (default 5 minutes); the Dashboard's one-second tick and `BaseActivity.onResume` both end an expired session and return to Login.
+1. **Why do the Spinner listeners get attached after the starting choice is selected?** — A Spinner calls its listener when it is first shown. If the listener were attached first, opening the screen would count as the user choosing something and could trigger a save and a warning. `setSelection(index, false)` and attaching the listener afterwards avoids that.
+2. **Why do changed digits/period/algorithm not affect the current authenticator?** — The secret and the parameters were shared with the authenticator app when it scanned the QR code; changing only our side would make the two sides compute different codes. The new values are used for the next secret, so a new QR code must be scanned.
+3. **Why does `AppSettings` validate every value it reads?** — Preferences are just a file; a missing or damaged value must never reach the TOTP engine (which rejects 9 digits) or the session timer. Each getter checks the value against the allowed list or range and otherwise returns the default; a unit test and a device test cover this.
+
+---
+
+### 4.14 Help (WebView)
+
+#### a. Purpose
+
+`HelpActivity` shows help in a **`WebView`** (a small browser inside the screen) with two buttons: **How TOTP works**, a page that ships inside the app (`assets/help.html`, so it works offline), and **RFC 6238**, the standard itself on the internet. Links stay inside the `WebView`, Back walks back through the pages before it closes the screen, a progress bar shows loading, and only the two allowed sites can be opened. JavaScript, file access and content access are switched off, which makes the `WebView` much harder to abuse.
+
+#### b. Files involved
+
+| Kind | Files |
+|---|---|
+| Java | `app/src/main/java/com/secureauth/simulator/ui/HelpActivity.java`, `app/src/main/java/com/secureauth/simulator/ui/HelpPages.java` |
+| Layout | `app/src/main/res/layout/activity_help.xml` (two buttons, `LinearProgressIndicator`, `WebView`, error text) |
+| Asset | `app/src/main/assets/help.html` (plain HTML and CSS, no scripts, with a diagram of the TOTP recipe) |
+| Resources | `strings.xml` (Help group) |
+| Manifest | `INTERNET` permission, used **only** for the RFC page; the `HelpActivity` entry |
+| Notes | Help is the only private-looking screen that needs **no session** (it shows no secret): `HelpActivity` does not override `requiresSession` |
+| Opened by | Dashboard options menu → *Help* |
+
+#### c. Classes and methods
+
+##### Class `HelpPages` (pure logic, unit-tested)
+
+**File:** `app/src/main/java/com/secureauth/simulator/ui/HelpPages.java` (28 lines)
+
+
+**Signature:** `static boolean isAllowed(String url)`
+
+- **What it does:** True for our own asset pages (`file:///android_asset/...`) and for pages on `https://datatracker.ietf.org/`. The trailing slash in the prefix matters: `https://datatracker.ietf.org.evil.example/` must not pass; plain `http`, other sites, other local files and empty addresses are refused.
+- **Inputs → output:** address → `boolean`.
+- **Called by:** `HelpActivity.PageClient.shouldOverrideUrlLoading`; `HelpPagesTest`.
+- **Calls next:** `String.startsWith`.
+
+```java
+/**
+ * True for our own asset pages and for pages on datatracker.ietf.org over https. The trailing
+ * slash in the prefix matters: "https://datatracker.ietf.org.evil.example/" must not pass.
+ */
+static boolean isAllowed(String url) {
+    return url != null && (url.startsWith(ASSET_PREFIX) || url.startsWith(RFC_HOST_PREFIX));
+}
+```
+
+
+##### Class `HelpActivity`
+
+**File:** `app/src/main/java/com/secureauth/simulator/ui/HelpActivity.java` (136 lines)
+
+
+**Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
+
+- **What it does:** Builds the screen and **hardens the `WebView`**: JavaScript off, file access off, content access off (zoom controls on, because the RFC page is long and small). Attaches `PageClient` and `ProgressClient`, wires the two buttons, installs a back-button callback, and either restores the page and history after a rotation (`restoreState`) or shows the local page.
+- **Inputs → output:** saved state → nothing.
+- **Called by:** Android, after the Dashboard menu.
+- **Calls next:** `ActivityHelpBinding.inflate`, `WebSettings.set*`, `show`, `WebView.restoreState`.
+
+```java
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    binding = ActivityHelpBinding.inflate(getLayoutInflater());
+    setContentView(binding.getRoot());
+    applySystemBarPadding(binding.helpRoot);
+    setSupportActionBar(binding.toolbar);
+    if (getSupportActionBar() != null) {
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    }
+
+    WebSettings settings = binding.webView.getSettings();
+    settings.setJavaScriptEnabled(false);
+    settings.setAllowFileAccess(false);       // does not affect file:///android_asset/ pages
+    settings.setAllowContentAccess(false);
+    settings.setBuiltInZoomControls(true);    // the RFC page is long and small on a phone
+    settings.setDisplayZoomControls(false);
+
+    binding.webView.setWebViewClient(new PageClient());
+    binding.webView.setWebChromeClient(new ProgressClient());
+
+    binding.buttonHelpTotp.setOnClickListener(v -> show(HelpPages.LOCAL_URL));
+    binding.buttonHelpRfc.setOnClickListener(v -> show(HelpPages.RFC_URL));
+
+    // Back walks back through the pages shown so far, and only then leaves the screen
+    getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+        @Override
+        public void handleOnBackPressed() {
+            if (binding.webView.canGoBack()) {
+                binding.webView.goBack();
+            } else {
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        }
+    });
+
+    if (savedInstanceState != null) {
+        binding.webView.restoreState(savedInstanceState); // keeps the page and the history on rotation
+    } else {
+        show(HelpPages.LOCAL_URL);
+    }
+}
+```
+
+
+**Signature:** `public void handleOnBackPressed()`
+
+- **What it does:** The Back button: if the `WebView` has an earlier page, go back inside it; otherwise disable this callback and let the normal Back close the screen.
+- **Inputs → output:** nothing.
+- **Called by:** Android's back dispatcher (callback registered in `onCreate`).
+- **Calls next:** `WebView.canGoBack/goBack`, `OnBackPressedDispatcher.onBackPressed`.
+
+```java
+@Override
+public void handleOnBackPressed() {
+    if (binding.webView.canGoBack()) {
+        binding.webView.goBack();
+    } else {
+        setEnabled(false);
+        getOnBackPressedDispatcher().onBackPressed();
+    }
+}
+```
+
+
+**Signature:** `protected void onSaveInstanceState(Bundle outState)`
+
+- **What it does:** Saves the `WebView`'s page and history so a rotation keeps them.
+- **Inputs → output:** `Bundle` → nothing.
+- **Called by:** Android.
+- **Calls next:** `WebView.saveState`.
+
+```java
+@Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    binding.webView.saveState(outState);
+}
+```
+
+
+**Signature:** `protected void onDestroy()`
+
+- **What it does:** Destroys the `WebView` (it holds on to its Activity until destroyed) and then calls the parent.
+- **Inputs → output:** nothing.
+- **Called by:** Android.
+- **Calls next:** `WebView.destroy`.
+
+```java
+@Override
+protected void onDestroy() {
+    // A WebView holds on to its Activity until it is destroyed
+    binding.webView.destroy();
+    super.onDestroy();
+}
+```
+
+
+**Signature:** `private void show(String url)`
+
+- **What it does:** Hides the error text and loads the address in the `WebView`.
+- **Inputs → output:** address → nothing.
+- **Called by:** `onCreate` (local page), the two buttons.
+- **Calls next:** `WebView.loadUrl`.
+
+```java
+private void show(String url) {
+    binding.textError.setVisibility(View.GONE);
+    binding.webView.loadUrl(url);
+}
+```
+
+
+**Signature:** `public boolean onOptionsItemSelected(MenuItem item)`
+
+- **What it does:** The Up arrow closes the screen.
+- **Inputs → output:** `MenuItem` → `true` if handled.
+- **Called by:** Android.
+- **Calls next:** `finish`.
+
+```java
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId() == android.R.id.home) {
+        finish();
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+```
+
+
+**Signature:** `public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request)`
+
+- **What it does:** Called when a link is tapped. Allowed address → return `false` (the same `WebView` loads it, so the link stays inside the app). Anything else → toast "Only the help pages can be opened here" and return `true` (not opened at all).
+- **Inputs → output:** view, request → `boolean`.
+- **Called by:** the `WebView` (inner class `PageClient`).
+- **Calls next:** `HelpPages.isAllowed`, `showToast`.
+
+```java
+@Override
+public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+    if (HelpPages.isAllowed(request.getUrl().toString())) {
+        return false; // let this WebView load it: the link stays inside the app
+    }
+    showToast(R.string.help_blocked);
+    return true;      // anything else is not opened at all
+}
+```
+
+
+**Signature:** `public void onPageStarted(WebView view, String url, Bitmap favicon)`
+
+- **What it does:** A page starts loading: hides the error text.
+- **Inputs → output:** view, address, icon → nothing.
+- **Called by:** the `WebView` (`PageClient`).
+- **Calls next:** `setVisibility`.
+
+```java
+@Override
+public void onPageStarted(WebView view, String url, Bitmap favicon) {
+    binding.textError.setVisibility(View.GONE);
+}
+```
+
+
+**Signature:** `public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error)`
+
+- **What it does:** For the main page only: shows "The page could not be loaded" (for example when offline). The local page still works.
+- **Inputs → output:** view, request, error → nothing.
+- **Called by:** the `WebView` (`PageClient`).
+- **Calls next:** `WebResourceRequest.isForMainFrame`.
+
+```java
+@Override
+public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+    if (request.isForMainFrame()) {
+        binding.textError.setVisibility(View.VISIBLE); // for example: offline
+    }
+}
+```
+
+
+**Signature:** `public void onProgressChanged(WebView view, int newProgress)`
+
+- **What it does:** Moves the progress bar while a page loads and hides it at 100 %.
+- **Inputs → output:** view, 0–100 → nothing.
+- **Called by:** the `WebView` (inner class `ProgressClient`).
+- **Calls next:** `LinearProgressIndicator.setProgress`.
+
+```java
+@Override
+public void onProgressChanged(WebView view, int newProgress) {
+    binding.progressPage.setVisibility(newProgress >= 100 ? View.INVISIBLE : View.VISIBLE);
+    binding.progressPage.setProgress(newProgress);
+}
+```
+
+
+##### The layout, the permission and the local page
+
+```xml
+<!-- The two "tabs": a page that ships inside the app, and the standard itself -->
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/button_help_totp"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="48dp"
+        android:text="@string/button_help_totp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/button_help_rfc"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:minHeight="48dp"
+        android:text="@string/button_help_rfc" />
+    <!-- ... -->
+    <WebView
+        android:id="@+id/web_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+```
+
+```xml
+<!-- Only for the Help screen's page about RFC 6238; nothing else in the app uses the network -->
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How TOTP works</title>
+<!-- No scripts: this page is plain HTML and CSS, so the WebView can keep JavaScript switched off -->
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; background: #ffffff; color: #1a1c1e; line-height: 1.5; }
+  h1 { font-size: 1.4em; color: #0b2a4a; margin-top: 0; }
+  h2 { font-size: 1.1em; color: #0b2a4a; margin-top: 1.6em; }
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 12px 0; }
+  .box { border: 2px solid #0b2a4a; border-radius: 10px; padding: 10px 12px; background: #eef3f8; }
+  .box small { display: block; color: #44474e; }
+  .inputs { display: flex; gap: 8px; }
+  .inputs .box { flex: 1; }
+  .arrow { text-align: center; font-size: 1.4em; color: #00796b; line-height: 1.1; }
+  .result { border-color: #00796b; background: #e0f2f1; font-size: 1.3em; text-align: center; letter-spacing: 0.15em; }
+  .note { border-left: 4px solid #00796b; background: #f2f7f6; padding: 8px 12px; margin: 12px 0; }
+  code { background: #eceff1; padding: 1px 4px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #c4c7cc; padding: 6px 8px; text-align: left; }
+</style>
+</head>
+<body>
+
+<h1>How a TOTP code is made</h1>
+<p>
+  <b>TOTP</b> means <i>Time-based One-Time Password</i>. The 6-digit code on your Dashboard is not
+  sent to you by anyone. Your phone works it out, and the server (here: this app) works out the
+  same number independently. If the two numbers match, you must know the secret.
+</p>
+
+<h2>The recipe</h2>
+<div class="flow">
+  <div class="inputs">
+    <div class="box"><b>Secret</b><small>20 random bytes, shown as the QR code when you set up</small></div>
+    <div class="box"><b>Clock</b><small>seconds since 1 Jan 1970</small></div>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>1. Time step</b><small>clock &divide; 30 = a counter that changes every 30 seconds</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>2. HMAC</b><small>the counter is mixed with the secret using HMAC-SHA1 (a keyed fingerprint)</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>3. Dynamic truncation</b><small>the last 4 bits pick 4 bytes of the fingerprint to keep</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box"><b>4. Last 6 digits</b><small>the number is cut down with &ldquo;remainder after dividing by 1,000,000&rdquo;</small></div>
+  <div class="arrow">&#8595;</div>
+  <div class="box result">287 082</div>
+</div>
+
+<h2>Why it is safe to use offline</h2>
+<div class="note">
+  Nothing in the recipe needs a network. It needs only the <b>secret</b> and the <b>clock</b>.
+  That is why the code keeps working in airplane mode.
+</div>
+
+<h2>Why the code changes every 30 seconds</h2>
+<p>
+  The counter in step 1 goes up by one every 30 seconds, so the whole result changes. A stolen
+  code is useless half a minute later. The ring on the Dashboard shows how long is left.
+</p>
+
+<h2>Why your code may be accepted slightly early or late</h2>
+<p>
+  Phone clocks are never perfectly equal. When checking a code, the app also accepts the step
+  just before and the step just after the current one (&plusmn;1 step, about 30 seconds either
+  way). A code two steps away is rejected.
+</p>
+
+<h2>A worked example from the standard</h2>
+<table>
+  <tr><th>What</th><th>Value</th></tr>
+  <tr><td>Secret (ASCII)</td><td><code>12345678901234567890</code></td></tr>
+  <tr><td>Time</td><td>59 seconds after 1 Jan 1970</td></tr>
+  <tr><td>Time step (59 &divide; 30)</td><td>1</td></tr>
+  <tr><td>8-digit code</td><td><code>94287082</code></td></tr>
+</table>
+<p>
+  This is one of the test values in RFC 6238 (Appendix B). This app&rsquo;s unit tests check that
+  its hand-written engine produces exactly these numbers.
+</p>
+
+<h2>What to do if your code is rejected</h2>
+<ul>
+  <li>Check that the date and time on your phone are set to <b>automatic</b>.</li>
+  <li>Make sure you are reading the code for this app and not another account.</li>
+  <li>If you changed the code length, period or algorithm in Settings, set up your authenticator again so both sides agree.</li>
+  <li>Lost the authenticator? Use one of your backup codes.</li>
+</ul>
+
+</body>
+</html>
+```
+
+
+#### e. Course components used here
+
+| Course topic (Unit / Lab) | Android component | File + method | How it is used |
+|---|---|---|---|
+| **Lab 5** — WebView · CO2 | `WebView`, `WebViewClient`, `WebChromeClient`, `WebSettings` | `HelpActivity.onCreate`, `PageClient`, `ProgressClient`; `activity_help.xml` | Shows a local HTML page and a remote RFC page inside the app |
+| Lab 5 | Loading from `assets` | `HelpPages.LOCAL_URL`; `assets/help.html` | The offline page needs no network or permission |
+| Unit 2 — simple controls | `MaterialButton` ×2, `LinearProgressIndicator` | `activity_help.xml` | The two "tabs" and the progress bar |
+| Unit 2 — toasts | `Toast` | `PageClient.shouldOverrideUrlLoading` | "Only the help pages can be opened here" |
+| Android 13+ back handling | `OnBackPressedCallback` | `HelpActivity.onCreate` | Back goes through the `WebView` history first |
+| Security | `WebSettings` hardening, URL allow-list | `onCreate`, `HelpPages.isAllowed` | JavaScript and file access off; only two sites |
+
+#### f. Explain it simply
+
+- A `WebView` is a tiny web browser that lives inside one of our screens.
+- The first button shows a page stored inside the app (so it works with no internet) that explains how a TOTP code is made, with a small diagram drawn in HTML and CSS. The second button shows the official standard, RFC 6238, from the internet.
+- Tapping a link inside the pages keeps you in the app, but only if the link goes to one of the two allowed places; anything else is blocked.
+- Back first goes back through the pages you saw, and only then leaves the screen.
+- We switch JavaScript and file access off because neither page needs them, and a browser that cannot run scripts or read files is much harder to attack.
+
+#### g. Likely viva questions
+
+1. **Why a `WebViewClient`, and what does `shouldOverrideUrlLoading` return?** — Without a `WebViewClient`, tapping a link opens the phone's browser. With one, returning `false` means "let this `WebView` load it" (the link stays in the app) and returning `true` means "I handled it" — here, by refusing everything that is not on the allow-list.
+2. **Why is JavaScript off, and what does the `INTERNET` permission do here?** — Neither page needs scripts, and a `WebView` with JavaScript off and file access off cannot be turned into a way to run code or read files. `INTERNET` is declared **only** so the RFC page can load; nothing else in the app uses the network, and the local page works without it.
+3. **Why does the allow-list check `https://datatracker.ietf.org/` with a trailing slash?** — Without the slash, an address such as `https://datatracker.ietf.org.evil.example/` would start with the same text and pass. `HelpPagesTest.lookAlikeHostsAreRefused` checks this.
+
+---
+
+### 4.15 Broadcast receivers
+
+#### a. Purpose
+
+A **`BroadcastReceiver`** listens for announcements that Android sends to apps. Two are used: **`AirplaneModeReceiver`** hears "airplane mode was switched"; when it was switched **on**, the screen shows a Snackbar "Offline: TOTP still works — it only needs the clock". **`ScreenOffReceiver`** hears "the screen turned off"; a protected screen with a live session then **locks at once** (the session is ended, an `AUTO_LOCK` row is written to the audit log and Login opens). Both receivers only report to a listener; the screen (`BaseActivity`) decides what to do.
+
+#### b. Files involved
+
+| Kind | Files |
+|---|---|
+| Java | `app/src/main/java/com/secureauth/simulator/receiver/AirplaneModeReceiver.java`, `app/src/main/java/com/secureauth/simulator/receiver/ScreenOffReceiver.java`; registration and reaction in `BaseActivity` ([4.3](#43-ui-foundation-and-splash)) |
+| Audit | `AuditEvent.AUTO_LOCK` |
+| Resources | `strings.xml` (`airplane_mode_message`) |
+| Manifest | **None** — these broadcasts cannot be received by manifest-declared receivers, so no `<receiver>` element exists |
+
+`ACTION_SCREEN_OFF` can be received only by a receiver registered **in code** while the app is running, so `BaseActivity` registers both in `onStart` and removes them in `onStop`, with the flag `RECEIVER_NOT_EXPORTED` (required since Android 14 for receivers registered in code; nobody except Android has a reason to send these broadcasts).
+
+#### c. Classes and methods
+
+##### Class `AirplaneModeReceiver`
+
+**File:** `app/src/main/java/com/secureauth/simulator/receiver/AirplaneModeReceiver.java` (38 lines)
+
+
+**Signature:** `void onAirplaneModeOn();`
+
+- **What it does:** The callback interface (`Listener`): called when airplane mode has just been turned on.
+- **Inputs → output:** nothing → nothing.
+- **Called by:** `AirplaneModeReceiver.onReceive`.
+- **Calls next:** whatever the listener does (`BaseActivity.handleAirplaneModeOn`).
+
+```java
+void onAirplaneModeOn();
+```
+
+
+**Signature:** `public AirplaneModeReceiver(Listener listener)`
+
+- **What it does:** Keeps the listener to tell.
+- **Inputs → output:** `Listener` → receiver.
+- **Called by:** the field initialiser in `BaseActivity`.
+- **Calls next:** nothing.
+
+```java
+public AirplaneModeReceiver(Listener listener) {
+    this.listener = listener;
+}
+```
+
+
+**Signature:** `public void onReceive(Context context, Intent intent)`
+
+- **What it does:** Checks the action is `ACTION_AIRPLANE_MODE_CHANGED`, reads the extra `"state"` (true = now on) and calls the listener **only when it turned on**.
+- **Inputs → output:** `Context`, the broadcast `Intent` → nothing.
+- **Called by:** Android, when the broadcast is sent (the receiver is registered).
+- **Calls next:** `Intent.getBooleanExtra("state", false)`, `Listener.onAirplaneModeOn`.
+
+```java
+@Override
+public void onReceive(Context context, Intent intent) {
+    if (intent == null || !Intent.ACTION_AIRPLANE_MODE_CHANGED.equals(intent.getAction())) {
+        return;
+    }
+    // The broadcast carries the new state as an extra named "state" (true = now on)
+    if (intent.getBooleanExtra("state", false)) {
+        listener.onAirplaneModeOn();
+    }
+}
+```
+
+
+##### Class `ScreenOffReceiver`
+
+**File:** `app/src/main/java/com/secureauth/simulator/receiver/ScreenOffReceiver.java` (34 lines)
+
+
+**Signature:** `void onScreenOff();`
+
+- **What it does:** The callback interface (`Listener`): called when the screen has just turned off.
+- **Inputs → output:** nothing → nothing.
+- **Called by:** `ScreenOffReceiver.onReceive`.
+- **Calls next:** whatever the listener does (`BaseActivity.handleScreenOff`).
+
+```java
+void onScreenOff();
+```
+
+
+**Signature:** `public ScreenOffReceiver(Listener listener)`
+
+- **What it does:** Keeps the listener to tell.
+- **Inputs → output:** `Listener` → receiver.
+- **Called by:** the field initialiser in `BaseActivity`.
+- **Calls next:** nothing.
+
+```java
+public ScreenOffReceiver(Listener listener) {
+    this.listener = listener;
+}
+```
+
+
+**Signature:** `public void onReceive(Context context, Intent intent)`
+
+- **What it does:** If the action is `ACTION_SCREEN_OFF`, calls the listener.
+- **Inputs → output:** `Context`, `Intent` → nothing.
+- **Called by:** Android.
+- **Calls next:** `Listener.onScreenOff`.
+
+```java
+@Override
+public void onReceive(Context context, Intent intent) {
+    if (intent != null && Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+        listener.onScreenOff();
+    }
+}
+```
+
+
+##### Where they are created and registered (in `BaseActivity`)
+
+```java
+// Broadcast receivers, registered while the screen is visible (see onStart / onStop)
+private final AirplaneModeReceiver airplaneModeReceiver = new AirplaneModeReceiver(this::handleAirplaneModeOn);
+private final ScreenOffReceiver screenOffReceiver = new ScreenOffReceiver(this::handleScreenOff);
+private boolean receiversRegistered;
+```
+
+
+**Signature:** `private void registerReceivers()`
+
+- **What it does:** Registers both receivers in code with `RECEIVER_NOT_EXPORTED` (see [4.3](#43-ui-foundation-and-splash)).
+- **Inputs → output:** nothing.
+- **Called by:** `BaseActivity.onStart`.
+- **Calls next:** `ContextCompat.registerReceiver` (twice).
+
+```java
+/**
+ * Listens for airplane mode and screen-off while this screen is visible. Both broadcasts come
+ * from Android itself, so the receivers are registered as NOT exported: since Android 14 an
+ * app must say whether other apps may send to a receiver registered in code, and nobody else
+ * has any business sending these.
+ */
+private void registerReceivers() {
+    if (receiversRegistered) {
+        return;
+    }
+    ContextCompat.registerReceiver(this, airplaneModeReceiver,
+            new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED);
+    ContextCompat.registerReceiver(this, screenOffReceiver,
+            new IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED);
+    receiversRegistered = true;
+}
+```
+
+
+**Signature:** `void handleScreenOff()`
+
+- **What it does:** Locks a protected screen with a live session at once: `endSession(AUTO_LOCK)` then `goToLogin()`.
+- **Inputs → output:** nothing.
+- **Called by:** `ScreenOffReceiver` (through its listener).
+- **Calls next:** `SessionManager.isActive`, `endSession`, `goToLogin`.
+
+```java
+/**
+ * The screen turned off: a protected screen with a live session locks at once. The session is
+ * ended (memory and database row, AUTO_LOCK written to the audit log) and Login is opened on
+ * an empty back stack. Screens that need no session, such as Login itself, do nothing.
+ */
+void handleScreenOff() {
+    if (!requiresSession() || !SessionManager.getInstance().isActive(System.currentTimeMillis())) {
+        return;
+    }
+    endSession(AuditEvent.AUTO_LOCK);
+    goToLogin();
+}
+```
+
+
+The other two methods, `unregisterReceivers` and `handleAirplaneModeOn`, are described in [4.3](#43-ui-foundation-and-splash).
+
+#### e. Course components used here
+
+| Course topic (Unit / Lab) | Android component | File + method | How it is used |
+|---|---|---|---|
+| **Lab 10** — broadcast receiver · CO2 | `BroadcastReceiver`, `IntentFilter`, `ContextCompat.registerReceiver`, `RECEIVER_NOT_EXPORTED` | `AirplaneModeReceiver.onReceive`, `ScreenOffReceiver.onReceive`; `BaseActivity.registerReceivers` | Reacting to system broadcasts |
+| Unit 2 — Android lifecycle | Registration in `onStart` / removal in `onStop` | `BaseActivity.onStart`, `onStop` | Listen only while the screen is visible |
+| Unit 2 — messages | `Snackbar` | `BaseActivity.handleAirplaneModeOn` | The offline reminder |
+| Unit 6 SQLite · CO3 | `AuditLogDao.log` through `endSession` | `BaseActivity.handleScreenOff` | `AUTO_LOCK` row |
+
+#### f. Explain it simply
+
+- A broadcast receiver is like a doorbell for system news: "airplane mode changed", "screen turned off".
+- We listen only while a screen of ours is visible. When you switch airplane mode **on**, a bar at the bottom says the codes still work, because a code only needs the secret and the clock.
+- When the screen turns off while you are logged in, the app locks immediately: it ends the session, writes `AUTO_LOCK` in the history and goes back to Login. Without this, the app would wait for the 5-minute timer.
+- The receiver classes are tiny: they only call a listener; `BaseActivity` decides what to do.
+
+#### g. Likely viva questions
+
+1. **Why are these receivers registered in code and not in the manifest?** — Android does not deliver `ACTION_SCREEN_OFF` to manifest-declared receivers; it can only be received while the app is running, by a receiver registered with `registerReceiver`. We register in `onStart` and unregister in `onStop` so nothing listens while the app is not visible.
+2. **What does `RECEIVER_NOT_EXPORTED` mean?** — Since Android 14 an app must say whether other apps may send broadcasts to a receiver registered in code. These broadcasts come only from the system, so the receivers are not exported and no other app can trigger a lock or the message.
+3. **Why does TOTP still work in airplane mode, and what happens on screen-off?** — The code uses only the stored secret and the clock; no network. On screen-off, `handleScreenOff` ends the session (`SessionManager.clear`, delete the row, write `AUTO_LOCK`) and opens Login on a cleared back stack; screens that need no session (Login, Help) do nothing.
 
 ---
 
@@ -11085,7 +13384,7 @@ None exist yet (apart from the methods above, which belong to other components).
 
 #### a. Purpose
 
-These files tell Gradle how to build the app (SDK levels, libraries, ViewBinding, the Maps key), tell Android what the app contains (the manifest: permissions, the 12 screens, the FileProvider) and set the backup rules. This is also where **publishing readiness** (Unit 7) is decided. Today the project builds debug versions and passes its tests, but the release work of Phase 15 (shrinking, signing key, privacy policy, final icon) has **not been done**; this section says exactly where each stands.
+These files tell Gradle how to build the app (SDK levels, libraries, ViewBinding, the Maps key), tell Android what the app contains (the manifest: permissions, the 15 screens, the FileProvider) and set the backup rules. This is also where **publishing readiness** (Unit 7) is decided. The release build is **shrunk with R8**, the backup rules keep everything on the phone, the launcher icon is the final shield-and-key, and the privacy documents exist. What is left is the team's own signing key and the actual Play Store upload; this section says exactly where each item stands.
 
 #### b. Files involved
 
@@ -11093,16 +13392,19 @@ These files tell Gradle how to build the app (SDK levels, libraries, ViewBinding
 |---|---|
 | `build.gradle.kts` (root) | Declares the Android application plugin without applying it (applied in `app`) |
 | `settings.gradle.kts` | Where libraries come from (Google, Maven Central), project name, includes `:app` |
-| `gradle.properties` | Gradle JVM memory, UTF-8, configuration cache on |
+| `gradle.properties` | Gradle JVM memory, UTF-8, configuration cache on, and the flag `android.r8.gradual.support=true` that lets the release build use R8 through the `optimization` block |
 | `gradle/libs.versions.toml` | **Version catalog**: every library and plugin version in one place |
 | `gradle/wrapper/gradle-wrapper.properties`, `gradlew`, `gradlew.bat`, `gradle-wrapper.jar` | Pin and download Gradle 9.4.1 |
 | `gradle/gradle-daemon-jvm.properties` | The JDK (21) that Gradle's daemon needs and where to fetch it |
-| `app/build.gradle.kts` | The module build: SDK levels, Maps key placeholder, ViewBinding, dependencies |
-| `app/src/main/AndroidManifest.xml` | Permissions, application settings, 12 activities, FileProvider, Maps key |
-| `app/src/main/res/xml/backup_rules.xml`, `data_extraction_rules.xml`, `file_paths.xml` | Backup rules (templates) and FileProvider folders |
-| `app/src/main/keepRules/rules.keep` | R8 keep-rules file (template, no active rule) |
+| `app/build.gradle.kts` | The module build: SDK levels, Maps key placeholder, optional release signing, R8 and resource shrinking, ViewBinding, dependencies |
+| `app/lint.xml` | Android Lint settings: one rule (`PluralsCandidate`) relaxed, with the reason written in the file |
+| `app/src/main/AndroidManifest.xml` | Permissions, application settings, 15 activities, FileProvider, Maps key |
+| `app/src/main/res/xml/backup_rules.xml`, `data_extraction_rules.xml`, `file_paths.xml` | Backup rules (exclude everything) and FileProvider folders (`cache/qr`, `cache/camera`) |
+| `app/src/main/keepRules/rules.keep` | R8 keep-rules file (template; the shrunk release build needed no extra rule) |
+| `docs/RELEASE.md`, `docs/privacy-policy.md`, `docs/play-data-safety.md` | How to create the signing key and a signed bundle; the privacy policy; draft Play data-safety answers |
 | `.gitignore`, `app/.gitignore` | Keep build output, `local.properties`, keystores and APK/AAB files out of Git |
 | `local.properties` | **Not committed and not shown here.** Holds this PC's SDK path and the optional `MAPS_API_KEY` |
+| `keystore.properties` | **Not in the repository (git-ignored).** Optional: where the release signing key is and its passwords |
 
 #### c. "Classes and methods"
 
@@ -11115,12 +13417,36 @@ There is no Java here; the build script is code, so it is annotated line by line
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Only for the Help screen's page about RFC 6238; nothing else in the app uses the network -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Optional: the place of each login is saved only if the user allows it -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Only used to take the profile photo (Profile > Change photo). It is asked for at that moment,
+         with an explanation first, and the photo can also come from the gallery. The picture itself
+         is taken by the phone's own camera app. (The QR library also declares this permission, so
+         it would be in the app either way.) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- The camera is optional: the profile photo can also come from the gallery -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+
+    <!-- Lets the app ask "is there a camera app?" (Android 11+ hides other apps otherwise) -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <!-- Backup is off on purpose: the TOTP secrets are encrypted with a Keystore key that never leaves
+         this phone, so a restored copy of the database could not be used anyway, and the app's promise
+         is that nothing leaves the device (see the two rule files, which also exclude everything). -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -11173,6 +13499,15 @@ There is no Java here; the build script is code, so it is annotated line by line
             android:name=".ui.TrustedDevicesActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.ProfileActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.HelpActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.LoginHistoryActivity"
             android:exported="false" />
         <activity
@@ -11206,52 +13541,50 @@ There is no Java here; the build script is code, so it is annotated line by line
 
 | Entry | What it means |
 |---|---|
-| `<uses-permission ... ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION>` | Optional location for the audit log. No `INTERNET`, `CAMERA` or storage permission is requested |
-| `android:allowBackup="true"` + the two `@xml/...` rule files | Android Auto Backup is on, and both rule files are empty templates (see Section 11) |
+| `<uses-permission ... ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION>` | Optional location for the audit log |
+| `<uses-permission ... INTERNET>` | Used **only** by the Help screen's RFC 6238 page; nothing else uses the network |
+| `<uses-permission ... CAMERA>`, `<uses-feature camera.any required="false">`, `<queries>` for `IMAGE_CAPTURE` | Only for *Take photo* on the Profile screen (asked for at that moment); the camera is optional because the gallery also works |
+| `android:allowBackup="false"` + the two `@xml/...` rule files | Backup is **off on purpose**: the TOTP secrets are encrypted with a Keystore key that never leaves the phone, so a restored database could not be used anyway; both rule files also exclude everything |
 | `<meta-data com.google.android.geo.API_KEY value="${MAPS_API_KEY}">` | Filled from `local.properties` by Gradle |
-| `SplashActivity` `exported="true"` + `MAIN`/`LAUNCHER` filter | The only screen other apps (the launcher) may start |
+| `SplashActivity` `exported="true"` + `MAIN`/`LAUNCHER` filter | The only screen other apps (the launcher) may start (`ReleaseHygieneTest.onlyTheLauncherScreenIsExported` checks it) |
 | Every other `<activity ... exported="false">` | Cannot be started from outside the app; this supports the "no way around the handshake" rule |
 | `windowSoftInputMode="adjustResize"` | Form screens shrink when the keyboard opens |
 | `BackupRecoveryActivity`, `BiometricGateActivity` `configChanges` | Not recreated on rotation, so a spent code or a pending location lookup is not lost |
-| `<provider androidx.core.content.FileProvider ... grantUriPermissions="true">` | Shares the QR image through `content://` links, for one share only; folders limited by `file_paths.xml` |
+| `<provider androidx.core.content.FileProvider ... grantUriPermissions="true">` | Shares the QR image and receives the camera picture through `content://` links; folders limited to `cache/qr` and `cache/camera` by `file_paths.xml` |
 
-##### Backup rule templates
+##### Backup rules and the keep-rules file
 
 ```xml
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: nothing from the app is copied to a backup (allowBackup is also false) -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
 </full-backup-content>
 ```
 
 ```xml
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: nothing is saved to the cloud backup or moved to a new phone.
+     The accounts, the profile photo and the encrypted secrets stay on this device only. -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </device-transfer>
-    -->
 </data-extraction-rules>
 ```
 
@@ -11274,7 +13607,7 @@ There is no Java here; the build script is code, so it is annotated line by line
 #### d. Full code with line-by-line comments — `app/build.gradle.kts`
 
 ```kotlin
-// ▶ Lets the script read a `.properties` file (used for the Maps key).
+// ▶ Lets the script read `.properties` files (used for the Maps key and the signing details).
 import java.util.Properties
 
 // ▶ Which Gradle plugins this module uses.
@@ -11301,6 +13634,23 @@ val mapsApiKey: String = run {
     properties.getProperty("MAPS_API_KEY", "").trim().ifEmpty { "MAPS_API_KEY_NOT_SET" }
 }
 
+// Signing details for the release build live in keystore.properties (a file that is never committed):
+//     storeFile=C:/path/to/secureauth-release.jks
+//     storePassword=...
+//     keyAlias=...
+//     keyPassword=...
+// Without that file the release build is still produced, just unsigned.
+// ▶ The same idea for the release signing details.
+val keystoreProperties = Properties().apply {
+    // ▶ Another git-ignored file: key file path, passwords, alias.
+    val file = rootProject.file("keystore.properties")
+    // ▶ Without the file the release build is produced unsigned instead of failing.
+    if (file.exists()) {
+        // ▶ Read it and close it again.
+        file.inputStream().use { load(it) }
+    }
+}
+
 // ▶ Android-specific settings.
 android {
     // ▶ The package name used for the generated `R` and ViewBinding classes.
@@ -11322,7 +13672,7 @@ android {
         minSdk = 26
         // ▶ The Android version the app is designed for.
         targetSdk = 36
-        // ▶ A whole number that must go up with every release.
+        // ▶ A whole number that must go up with every upload to the Play Store.
         versionCode = 1
         // ▶ The version text people see.
         versionName = "1.0"
@@ -11336,14 +13686,41 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
+    // ▶ How to sign the app.
+    signingConfigs {
+        // ▶ Only when `keystore.properties` exists and has content.
+        if (keystoreProperties.isNotEmpty()) {
+            // ▶ A signing configuration called "release".
+            create("release") {
+                // ▶ The key file (outside the project).
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                // ▶ Password of the key file.
+                storePassword = keystoreProperties.getProperty("storePassword")
+                // ▶ Name of the key inside the file.
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                // ▶ Password of that key.
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     // ▶ Debug and release variants.
     buildTypes {
         // ▶ The variant for publishing.
         release {
-            // ▶ Code shrinking and obfuscation (R8) settings.
+            // R8 shrinks and renames the code, and the resource shrinker removes unused resources.
+            // Extra keep rules, if ever needed, go in src/main/keepRules/rules.keep
+            // ▶ Code shrinking and renaming (R8) settings.
             optimization {
-                // ▶ Shrinking is OFF for now (Phase 15 would turn it on).
-                enable = false
+                // ▶ Shrinking is ON for the release build (needs `android.r8.gradual.support=true` in `gradle.properties`).
+                enable = true
+            }
+            // ▶ Also remove resources nothing uses.
+            isShrinkResources = true
+            // ▶ If signing details exist ...
+            if (keystoreProperties.isNotEmpty()) {
+                // ▶ ... sign the release build with them.
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }
@@ -11503,37 +13880,39 @@ The `libs.` names in `app/build.gradle.kts` (for example `libs.biometric`) come 
 | **Unit 1** — Android Studio setup and emulator · **Lab 1** installation | Android Studio, Gradle, SDK, AVD | the Gradle files above; `README.md` build steps | Open → sync → run on a Pixel emulator with PIN + fingerprint |
 | Unit 2 — screen layout / resources | Resource folders, ViewBinding, themes | `res/`, `buildFeatures.viewBinding` | Layout XML separated from code |
 | Rubric 3 — Material Design | Material 3 DayNight theme | `themes.xml`, `colors.xml`, `values-night/colors.xml` | Consistent theme in light and dark |
-| **Unit 7** — publishing · CO4 | `versionCode`/`versionName`, manifest, signing, R8, privacy policy | `app/build.gradle.kts` | **Partly covered**: version fields and a clean manifest exist; **release signing, R8 shrinking, final icon and `docs/privacy-policy.md` are not done** (Phase 15) |
+| **Unit 7** — publishing · CO4 | `versionCode`/`versionName`, manifest, R8, optional signing, privacy policy | `app/build.gradle.kts`; `docs/RELEASE.md`, `docs/privacy-policy.md`, `docs/play-data-safety.md` | **Mostly covered**: shrunk release build, final icon, `FLAG_SECURE`, backup off, privacy documents. **Not done:** an actual signed upload (needs the team's own key) and restricting the Maps key to the release certificate |
 | Unit 4 | Manifest placeholders and `<meta-data>` | `app/build.gradle.kts`, `AndroidManifest.xml` | Maps key kept out of source |
 
 ##### Release readiness checklist (honest status)
 
 | Item | Status |
 |---|---|
-| Versioned app id, `versionCode 1`, `versionName "1.0"` | Done |
-| Strings in `strings.xml` (no hard-coded UI text in layouts) | Done (about 200 strings) |
+| Versioned app id, `versionCode 1`, `versionName "1.0"` | Done (raise `versionCode` for every upload) |
+| Strings in `strings.xml` (no hard-coded UI text in layouts; plurals for "1 entry") | Done (217 strings) |
 | Dark mode palette | Done |
-| Touch targets of at least 48 dp on buttons | Set with `android:minHeight` on buttons and the check box |
-| R8 minify / resource shrinking | **Off** (`optimization { enable = false }`); `rules.keep` is only a template |
-| Signing key and signed AAB | **Not created** (no `signingConfigs`) |
-| `FLAG_SECURE` on code/secret screens | **Not present** anywhere in the code |
-| Adaptive launcher icon with the shield + key idea | **Not done**: the icon files are the Android Studio default template |
-| `docs/privacy-policy.md` and Play data-safety answers | **Not written** |
-| Backup rules limiting what Auto Backup copies | **Not written** (templates with a `TODO`) |
+| Touch targets of at least 48 dp on buttons | Done (set with `android:minHeight`; a scripted check was run) |
+| R8 minify and resource shrinking for release | **On** (`optimization { enable = true }`, `isShrinkResources = true`); no extra keep rule was needed |
+| Signing key and signed AAB | **Prepared, not created**: signing is read from the git-ignored `keystore.properties`; without it `./gradlew bundleRelease` gives an unsigned bundle. `docs/RELEASE.md` walks through creating the key |
+| `FLAG_SECURE` on code/secret screens | **Done** on Dashboard, Enroll, Backup codes and the codes dialog (`SecureScreenTest`) |
+| Adaptive launcher icon (shield + key) with a themed layer | **Done** (`ic_launcher_foreground.xml`, `ic_launcher_monochrome.xml`; the old bitmap icons were removed) |
+| `docs/privacy-policy.md` and Play data-safety answers | **Written** (`docs/privacy-policy.md`, `docs/play-data-safety.md`) |
+| Backup rules | **Done**: backup off, rule files exclude everything |
+| Android Lint | 0 errors on debug and release (as recorded in the plan's tracker) |
+| Actual upload to Google Play; Maps key restricted to the release certificate | **Not done** (needs the team's key and a Google Cloud setting) |
 
 #### f. Explain it simply
 
 - **Gradle** is the machine that turns our files into an installable app. `app/build.gradle.kts` is its instruction sheet: which Android version, which libraries, and a special feature (**ViewBinding**) that makes each layout available as a typed class.
 - `libs.versions.toml` is one list of all library versions, so updating is a one-line change.
-- The **manifest** is the app's ID card: its name, its 12 screens, which one can be started from outside (Splash only), the permissions it asks for (only optional location), and a "FileProvider" that safely shares one folder.
+- The **manifest** is the app's ID card: its name, its 15 screens, which one can be started from outside (Splash only), the permissions it asks for (optional location, the camera for a profile photo, the internet only for one help page), and a "FileProvider" that safely shares two folders.
 - The Google Maps key lives in a file that is never uploaded to GitHub; Gradle copies it into the manifest while building.
-- Release work (signing, shrinking, privacy policy) is the last phase and is not done yet.
+- For release, Gradle shrinks the code with R8, the manifest turns backup off, screens with secrets block screenshots, and a guide (`docs/RELEASE.md`) explains how to sign the bundle with your own key.
 
 #### g. Likely viva questions
 
 1. **What is ViewBinding and why use it?** — With `viewBinding = true` Gradle generates one class per layout (for example `ActivityLoginBinding`) with a typed field for each view that has an id. It replaces `findViewById`: no casts, no wrong ids, null-safety for views that exist in the layout.
 2. **What does `android:exported` mean and why is only `SplashActivity` `true`?** — It says whether other apps can start the Activity. The launcher must start Splash, so it is exported with the `MAIN`/`LAUNCHER` filter; every other screen is `exported="false"`, so another app cannot open, say, the Dashboard or the biometric screen directly.
-3. **What is `allowBackup` and what is still to do before publishing?** — `allowBackup="true"` lets Android back up app data to the user's cloud account; our rule files are empty templates, so the database would be included (the Keystore key does not move with it, so restored secrets could not be decrypted). Before publishing we still need R8 shrinking, a signing key and a signed AAB, a privacy policy, backup rules, `FLAG_SECURE` and the final icon.
+3. **Why is Android backup switched off, and what does the release build do differently?** — The TOTP secrets are encrypted with a Keystore key that never leaves the phone, so a restored copy of the database could not be decrypted, and the app promises that nothing leaves the device; so `allowBackup="false"` and both rule files exclude everything. The release build turns on R8 (shrinks and renames code) and the resource shrinker, and signs with the key from `keystore.properties` if that file exists. What is still to do is creating that key, building the signed bundle (`docs/RELEASE.md`) and uploading it.
 
 ---
 
@@ -11541,7 +13920,7 @@ The `libs.` names in `app/build.gradle.kts` (for example `libs.biometric`) come 
 
 #### a. Purpose
 
-The project has two kinds of tests. **Local unit tests** (`app/src/test`) run on the computer in milliseconds and cover everything that does not need Android: Base32, the TOTP engine against the RFC vectors, hashing, CSV, distances, input rules. **Instrumented tests** (`app/src/androidTest`) run on an emulator or phone and cover the database, the Keystore and every screen with Espresso. They are the team's evidence that the handshake cannot be bypassed.
+The project has two kinds of tests. **Local unit tests** (`app/src/test`) run on the computer in milliseconds and cover everything that does not need Android: Base32, the TOTP engine against the RFC vectors, hashing, CSV, distances, input rules. **Instrumented tests** (`app/src/androidTest`) run on an emulator or phone and cover the database, the Keystore and every screen with Espresso. They are the team's evidence that the handshake cannot be bypassed: for example `HandshakeGuardTest` tries to open each step without the one before it, and `ProjectRulesTest` fails if a rule from the plan is broken.
 
 #### b. Files involved
 
@@ -11554,21 +13933,27 @@ The project has two kinds of tests. **Local unit tests** (`app/src/test`) run on
 | Test file | `@Test` methods | What it checks |
 |---|---|---|
 | `ExampleUnitTest.java` | 1 | Android Studio template (2 + 2 = 4) |
+| `ProjectRulesTest.java` | 13 | The plan's hard rules as tests: no Kotlin/Dart/Compose, only allowed libraries, no OTP/Base32 library, no weak random, secrets only through the Keystore, PBKDF2 only, Activity Result APIs, no logging, every screen protected, one session creator, audit events declared once |
+| `ReleaseHygieneTest.java` | 12 | `.gitignore` keeps keys out, no key or API key in source, only Splash exported, backup off, minimal permissions, FileProvider not exported, release shrinks and reads signing from a file, icon is the shield and key |
 | `crypto/BackupCodeGeneratorTest.java` | 9 | 10 unique codes in `XXXX-XXXX`, no ambiguous characters, hash not plain, per-code salt, matching rules, normalising |
 | `crypto/Base32Test.java` | 8 | RFC 4648 vectors, round trip at every length, lower case and spaces, rejects bad characters/length/null |
 | `crypto/PasswordHasherTest.java` | 7 | Correct/wrong password, different salts, sizes (16-byte salt, 32-byte hash), equals an independent PBKDF2, password array wiped, broken stored values give false |
 | `crypto/TotpEngineTest.java` | 19 | **RFC 6238 vectors for SHA-1 and SHA-256**, leading zeros, ±1 window and not ±2, wrong/malformed/null codes, 60 s period, `otpauth` link and encoding, bad parameters |
+| `data/AppSettingsRulesTest.java` | 6 | Only the offered digits/periods/algorithms are valid, defaults, differs-from-defaults, auto-lock range, time-picker answers |
 | `data/DeviceNameTest.java` | 7 | Manufacturer + model joining, case-insensitive repeat check, blank names, cleaning, 1–40 length rule |
+| `data/LoginHandshakeTest.java` | 12 | Stages open the right next step only, one user at a time, 10-minute expiry, clock going backwards, invalid ids |
 | `data/SessionTokenTest.java` | 4 | Token is 32 random bytes as URL-safe text, no repeats, SHA-256 in Base64 |
+| `io/AvatarSizeTest.java` | 9 | Shrink factor (power of two, short side), square side, "inside the folder" check against `..` |
 | `io/CsvImporterParseTest.java` | 11 | Row parsing, optional columns, header rules, bad rows counted, formulas rejected, size/row limits, export → import round trip |
 | `io/CsvTest.java` | 15 | Escaping, rows with CRLF, formula guard, every line ending, quotes, BOM, unclosed quote error, round trip |
 | `io/FileExporterTest.java` | 7 | Backup-code file text; audit CSV header, order, time zone, no scientific notation, formula-proof text |
 | `location/LocationHelperTest.java` | 9 | Haversine distances for known cities, symmetry, date line, 100 km threshold, both permissions requested |
 | `ui/BiometricSupportTest.java` | 5 | Authenticator choice per Android version; availability mapping |
+| `ui/HelpPagesTest.java` | 7 | Which web addresses the Help screen may open (look-alike hosts, plain http, other files refused) |
 | `ui/HistoryHelpersTest.java` | 7 | Location text, failure test, start/end of day, month ends, end of today |
 | `ui/InputRulesTest.java` | 5 | Username normalising and length, password minimum, strength levels |
 | `ui/MapMarkersTest.java` | 6 | No marker without a place, marker text, green/red rules, order |
-| **Total** | **120** | 15 files |
+| **Total** | **179** | 21 files |
 
 
 ##### Instrumented (device) tests
@@ -11578,33 +13963,43 @@ The project has two kinds of tests. **Local unit tests** (`app/src/test`) run on
 | `ExampleInstrumentedTest.java` | 1 | Android Studio template (checks the package name) |
 | `crypto/KeystoreHelperTest.java` | 6 | Encrypt → decrypt, plain secret not in ciphertext, fresh IV each time, tampering and wrong IV rejected, key lives in the Keystore under its alias |
 | `crypto/TotpEngineDeviceTest.java` | 1 | RFC vector on Android's own crypto provider |
+| `data/AppSettingsDeviceTest.java` | 6 | Defaults, saved choices read back, unoffered choices not saved, damaged values fall back, session timer and location helper follow the settings |
 | `data/AuditLogDaoTest.java` | 9 | Null location stays null (not 0.0), newest first, inclusive date range, last located entry |
 | `data/DeviceTrustTest.java` | 8 | Trust this phone once, one audit row, never-trusted is not revoked, rename keeps the link, per-user separation |
 | `data/LockoutManagerTest.java` | 7 | 2 failures no lock, 3rd locks 5 minutes with an audit row, expiry, success resets, formatting |
 | `data/RelatedTablesDaoTest.java` | 14 | Foreign keys and cascade delete, `replaceForUser` atomicity, `markUsed` only once, devices, sessions |
 | `data/SessionManagerTest.java` | 8 | No session without login, active until expiry, only the hash is stored, replacement, deleted row not trusted, auto-lock bounds |
 | `data/UserDaoTest.java` | 8 | CRUD, duplicate username refused, SQL-injection text stored as plain text, counters, lock time |
+| `io/AvatarStoreDeviceTest.java` | 11 | Big picture to 512 px square JPEG in the avatar folder, centre kept, EXIF rotation, transparent PNG on white, non-pictures refused, new file name each time, load and delete safe outside the folder |
 | `io/CsvImporterDeviceTest.java` | 11 | Import into a real database: user, duplicates, invalid rows, size limit, content-resolver reading |
 | `io/FileExporterDeviceTest.java` | 4 | Writing through a content resolver, truncation, non-ASCII text, unwritable location |
+| `io/TestImages.java` | 0 | Helper that makes small test pictures |
 | `location/LocationHelperDeviceTest.java` | 4 | Setting default, "asked" flag, permission state, setting off gives no location |
 | `ui/AuthFlowTest.java` | 8 | Register + password login, wrong passwords lock the account, generic error for unknown user, validation errors, strength hint |
 | `ui/BackupCodesFlowTest.java` | 7 | No codes at first, counts, warning, 10 codes shown once as hashes, rotation, replacement |
 | `ui/BackupRecoveryFlowTest.java` | 11 | A code works once, three wrong lock, shared counter, malformed not counted, re-enroll path, whole path to biometric |
 | `ui/BiometricGateFlowTest.java` | 16 | Gate alone creates no session, success creates exactly one, cancel, errors, lock, location and suspicious-login cases |
 | `ui/DashboardFlowTest.java` | 17 | Live code, ring and text agree, copy, menu entries, logout, expired and deleted sessions, secret wiped when hidden |
-| `ui/EnrollFlowTest.java` | 9 | Grouped secret, QR content, confirm section, wrong code saves nothing, Keystore storage, replace authenticator, context menu |
+| `ui/EnrollFlowTest.java` | 10 | Grouped secret, QR content, confirm section, wrong code saves nothing, Keystore storage, replace authenticator, context menu |
 | `ui/FakeLocationHelper.java` | 0 | A scripted `LocationHelper` for tests ("user is in Mumbai" / "said no") |
+| `ui/HandshakeGuardTest.java` | 13 | Each step refuses to open without the one before it, other user, stale (10 min), logout and Login clear progress, every protected screen redirects |
+| `ui/HelpFlowTest.java` | 7 | Local page loads, progress bar, RFC button and back, Back walks history, JavaScript and file access off, blocked links |
+| `ui/LauncherIconTest.java` | 2 | Adaptive icon with foreground, background and a themed monochrome layer |
 | `ui/LoginHistoryFlowTest.java` | 15 | List order, icons, date filter, rotation, export of what is shown, import with duplicates and garbage |
 | `ui/LoginLocationFlowTest.java` | 5 | Rationale dialog, declining still logs in, rows carry the place, setting off |
 | `ui/LoginMapFlowTest.java` | 6 | One marker per located entry, single marker, empty message, legend, per-user |
+| `ui/ProfileFlowTest.java` | 18 | Texts, placeholder, camera/gallery choices, rationale and denied permission, picked/taken photo saved and old file deleted, cancelled paths, Dashboard toolbar photo |
+| `ui/ReceiverFlowTest.java` | 8 | Receivers report only the right broadcasts; airplane message; screen-off ends the session, writes AUTO_LOCK and opens Login; no live session writes nothing |
 | `ui/RegisterTrustFlowTest.java` | 2 | Ticked box adds this phone to trusted devices, unticked does not |
 | `ui/RevokedDeviceLoginTest.java` | 6 | A revoked phone asks for a backup code after the correct code; wrong codes count; trusted/never-trusted phones go straight on |
+| `ui/SecureScreenTest.java` | 5 | `FLAG_SECURE` on Dashboard, Enroll, Backup codes and the one-time codes dialog; not on screens without secrets |
+| `ui/SettingsFlowTest.java` | 13 | Defaults, saved choices, warning on and off, existing authenticator untouched, time picker in and out of range, new auto-lock used, location box, set up again |
 | `ui/SplashActivityTest.java` | 1 | Splash shows the logo and button |
 | `ui/TestUtils.java` | 0 | Helper methods for the screen tests (create user, enroll, wait for a screen, current code) |
 | `ui/TotpVerifyFlowTest.java` | 7 | Auto-submit, shared failure counter, locked users stopped, no-authenticator → enrollment, backup link |
 | `ui/TrustedDevicesFlowTest.java` | 11 | List and "this phone" mark, empty hint, rename, blank refused, revoke with confirmation, no revoke without backup codes |
 | `views/CountdownRingViewTest.java` | 5 | Progress clamp, warning at 5 s, full ring, arc direction, square measure |
-| **Total** | **207** | 29 files |
+| **Total** | **291** | 39 files |
 
 
 ##### Two real examples
@@ -11694,6 +14089,286 @@ public void threeWrongPasswordsLockTheAccountEvenForTheRightPassword() throws Ex
 
 ---
 
+### 4.18 Login handshake guard
+
+#### a. Purpose
+
+The screens of the handshake pass a `userId` to each other in an Intent. An Intent proves nothing, so a later step needs **proof that the earlier steps really happened**. `LoginHandshake` is a small in-memory object that remembers *how far the current login has got* (for one user at a time, for at most 10 minutes). The code screen, the backup-code screen, the fingerprint screen and Enroll each ask it before they open. This is the second lock behind "no screen except Splash is exported": it also protects against a mistake inside the app that would open a later step without the earlier ones. It was added in Phase 16 after the security review found that gap (see `docs/SECURITY_REVIEW.md`).
+
+#### b. Files involved
+
+| Kind | Files |
+|---|---|
+| Java | `app/src/main/java/com/secureauth/simulator/data/LoginHandshake.java` |
+| Writers | `RegisterActivity.createAccount` (`registered`), `LoginActivity.checkPassword` (`passwordAccepted`), `TotpVerifyActivity.goToBiometricGate` (`codeAccepted`) |
+| Readers | `TotpVerifyActivity.onCreate`, `BackupRecoveryActivity.onCreate` (`allowsCodeStep`); `BiometricGateActivity.onCreate` (`allowsBiometricStep`); `EnrollActivity.onCreate` (`allowsEnroll`) |
+| Clearers | `LoginActivity.onResume`, `BaseActivity.endSession`, `BiometricGateActivity.onDestroy` (when finishing) and `completeLogin` |
+| Tests | `LoginHandshakeTest` (12, on the PC), `HandshakeGuardTest` (13, on a device), `ProjectRulesTest.theScreensThatTrustAnIntentUserIdAllCheckTheHandshake` |
+
+#### c. Class and methods
+
+**File:** `app/src/main/java/com/secureauth/simulator/data/LoginHandshake.java` (103 lines)
+
+
+```mermaid
+stateDiagram-v2
+    [*] --> NONE
+    NONE --> REGISTERED: registered, a new account was just created
+    NONE --> PASSWORD_OK: passwordAccepted, the password was correct
+    REGISTERED --> PASSWORD_OK: passwordAccepted
+    PASSWORD_OK --> CODE_OK: codeAccepted, the code or a backup code was correct
+    CODE_OK --> NONE: clear, the session was created
+    PASSWORD_OK --> NONE: clear, Login shown again or logout or 10 minutes
+    REGISTERED --> NONE: clear
+    CODE_OK --> NONE: clear, the fingerprint screen finished or 10 minutes
+```
+
+The fingerprint step opens only in `CODE_OK`; the code step and the backup-code screen only in `PASSWORD_OK`; Enroll in `REGISTERED` or `PASSWORD_OK` (or from a live session of the same user).
+
+**Signature:** `public static LoginHandshake getInstance()`
+
+- **What it does:** Returns the one shared instance.
+- **Inputs → output:** nothing → `LoginHandshake`.
+- **Called by:** every writer, reader and clearer listed above.
+- **Calls next:** nothing.
+
+```java
+public static LoginHandshake getInstance() {
+    return INSTANCE;
+}
+```
+
+
+**Signature:** `public synchronized void registered(long forUserId, long now)`
+
+- **What it does:** The user just created this account: enrollment may open for it. Replaces any earlier stage.
+- **Inputs → output:** user id, time → nothing.
+- **Called by:** `RegisterActivity.createAccount`.
+- **Calls next:** `enter(REGISTERED, ...)`.
+
+```java
+/** The user just created this account: enrollment may open for it. Replaces any earlier stage. */
+public synchronized void registered(long forUserId, long now) {
+    enter(Stage.REGISTERED, forUserId, now);
+}
+```
+
+
+**Signature:** `public synchronized void passwordAccepted(long forUserId, long now)`
+
+- **What it does:** The password was correct. Replaces any earlier stage, so a new login always starts from here.
+- **Inputs → output:** user id, time → nothing.
+- **Called by:** `LoginActivity.checkPassword`.
+- **Calls next:** `enter(PASSWORD_OK, ...)`.
+
+```java
+/** The password was correct. Replaces any earlier stage (a new login starts from here). */
+public synchronized void passwordAccepted(long forUserId, long now) {
+    enter(Stage.PASSWORD_OK, forUserId, now);
+}
+```
+
+
+**Signature:** `public synchronized boolean codeAccepted(long forUserId, long now)`
+
+- **What it does:** The 6-digit code (or a backup code in its place) was accepted. Valid only right after a correct password for the **same** user; otherwise it returns `false` and changes nothing.
+- **Inputs → output:** user id, time → `boolean`.
+- **Called by:** `TotpVerifyActivity.goToBiometricGate`.
+- **Calls next:** `is(PASSWORD_OK, ...)`, `enter(CODE_OK, ...)`.
+
+```java
+/**
+ * The 6-digit code (or a backup code in its place) was accepted. Only valid right after a
+ * correct password for the SAME user; returns false, and changes nothing, otherwise.
+ */
+public synchronized boolean codeAccepted(long forUserId, long now) {
+    if (!is(Stage.PASSWORD_OK, forUserId, now)) {
+        return false;
+    }
+    enter(Stage.CODE_OK, forUserId, now);
+    return true;
+}
+```
+
+
+**Signature:** `public synchronized void clear()`
+
+- **What it does:** Forgets everything: stage `NONE`, no user.
+- **Inputs → output:** nothing.
+- **Called by:** `LoginActivity.onResume`; `BaseActivity.endSession`; `BiometricGateActivity.completeLogin` and `onDestroy`.
+- **Calls next:** nothing.
+
+```java
+/** Forgets everything: back to the start of the login. */
+public synchronized void clear() {
+    stage = Stage.NONE;
+    userId = -1;
+    since = 0;
+}
+```
+
+
+**Signature:** `public synchronized boolean allowsCodeStep(long forUserId, long now)`
+
+- **What it does:** May the 6-digit code step (and the backup-code screen) open for this user? Only in stage `PASSWORD_OK`.
+- **Inputs → output:** user id, time → `boolean`.
+- **Called by:** `TotpVerifyActivity.onCreate`, `BackupRecoveryActivity.onCreate`.
+- **Calls next:** `is`.
+
+```java
+/** May the 6-digit code step (and the backup-code screen) open for this user? */
+public synchronized boolean allowsCodeStep(long forUserId, long now) {
+    return is(Stage.PASSWORD_OK, forUserId, now);
+}
+```
+
+
+**Signature:** `public synchronized boolean allowsBiometricStep(long forUserId, long now)`
+
+- **What it does:** May the fingerprint step open for this user? Only in stage `CODE_OK`.
+- **Inputs → output:** user id, time → `boolean`.
+- **Called by:** `BiometricGateActivity.onCreate`.
+- **Calls next:** `is`.
+
+```java
+/** May the fingerprint step open for this user? Only after the code step. */
+public synchronized boolean allowsBiometricStep(long forUserId, long now) {
+    return is(Stage.CODE_OK, forUserId, now);
+}
+```
+
+
+**Signature:** `public synchronized boolean allowsEnroll(long forUserId, long now)`
+
+- **What it does:** May enrollment open for this user without a session? After registering or after the password step.
+- **Inputs → output:** user id, time → `boolean`.
+- **Called by:** `EnrollActivity.onCreate`.
+- **Calls next:** `is` (twice).
+
+```java
+/** May enrollment open for this user (without a session)? After registering or the password step. */
+public synchronized boolean allowsEnroll(long forUserId, long now) {
+    return is(Stage.REGISTERED, forUserId, now) || is(Stage.PASSWORD_OK, forUserId, now);
+}
+```
+
+
+**Signature:** `private void enter(Stage next, long forUserId, long now)`
+
+- **What it does:** Moves to the new stage, remembering the user and the time.
+- **Inputs → output:** stage, user id, time → nothing.
+- **Called by:** `registered`, `passwordAccepted`, `codeAccepted`.
+- **Calls next:** nothing.
+
+```java
+private void enter(Stage next, long forUserId, long now) {
+    stage = next;
+    userId = forUserId;
+    since = now;
+}
+```
+
+
+**Signature:** `private boolean is(Stage wanted, long forUserId, long now)`
+
+- **What it does:** True only if the stage is exactly `wanted`, the user id is valid (≥ 0) and equals the remembered one, the clock has not gone backwards, and no more than 10 minutes have passed.
+- **Inputs → output:** stage, user id, time → `boolean`.
+- **Called by:** `codeAccepted`, `allowsCodeStep`, `allowsBiometricStep`, `allowsEnroll`.
+- **Calls next:** nothing.
+
+```java
+private boolean is(Stage wanted, long forUserId, long now) {
+    return stage == wanted
+            && forUserId >= 0
+            && userId == forUserId
+            && now >= since
+            && now - since <= MAX_AGE_MS;
+}
+```
+
+
+#### e. Course components used here
+
+| Course topic (Unit / Lab) | Android component | File + method | How it is used |
+|---|---|---|---|
+| Self-learning (rubric 2) | Defence in depth: a second lock behind `exported="false"` | `LoginHandshake`; the readers listed above | Proves earlier steps instead of trusting an Intent extra |
+| Unit 2 — multiscreen · Lab 3 explicit Intent | Intent extras are untrusted data | `TotpVerifyActivity.goToBiometricGate`, `BiometricGateActivity.onCreate` | The `userId` extra is checked against the in-memory stage |
+| Unit 2 — Java basics | `enum`, singleton, `synchronized` | `LoginHandshake` | A tiny state machine |
+| CO4 — testing | JUnit and Espresso | `LoginHandshakeTest`, `HandshakeGuardTest` | Tries to skip each step |
+
+#### f. Explain it simply
+
+- Think of a building with three locked doors in a row. Each door is opened by the previous one. The Intent that says "user 7" is like someone just *saying* they came through door 1; `LoginHandshake` is the guard's notebook that says "yes, door 1 was really opened for user 7 a few minutes ago".
+- The notebook is in memory only, remembers **one user at a time**, and entries expire after 10 minutes.
+- Going back to Login, logging out, or finishing the fingerprint screen tears the page out.
+- The notebook is a *second* lock: even without it, other apps cannot open our screens at all (only Splash is exported).
+
+#### g. Likely viva questions
+
+1. **Why do you need `LoginHandshake` if the screens are not exported?** — `exported="false"` stops other apps, but inside the app a bug (or a test) could still start `BiometricGateActivity` with any `userId`. The handshake makes each step prove that the previous one really happened for the same user, and it expires, so a stale or forged jump fails and sends the user to Login.
+2. **Why is it only in memory and for one user at a time?** — The proof only matters for the login in progress; keeping it in memory means it disappears when the process dies, and a new password step for another user replaces the old progress, so progress can never be mixed between accounts.
+3. **When is the progress thrown away?** — When Login is shown again (`LoginActivity.onResume`), at logout (`BaseActivity.endSession`), when the fingerprint screen finishes (`onDestroy`), when the session is created (`completeLogin`), and by itself after 10 minutes (`is` compares `now − since` with `MAX_AGE_MS`).
+
+---
+
+### 4.19 Small methods not listed above
+
+For completeness, here are the last kinds of methods in `app/src/main/java`. Together with the entries in 4.1–4.18 this accounts for **every** method and constructor in the app.
+
+#### a. Empty private constructors (utility classes)
+
+A class that only has static helpers declares an **empty private constructor**, so nobody can write `new ClassName()`. There is nothing to call and nothing to explain beyond that. One real example:
+
+**Signature:** `private Base32()`
+
+- **What it does:** Prevents creating objects of `Base32`; all its methods are `static`.
+- **Inputs → output:** nothing.
+- **Called by:** nobody (it cannot be called from outside the class).
+- **Calls next:** nothing.
+
+```java
+private Base32() {
+}
+```
+
+
+| Class | File | What it groups |
+|---|---|---|
+| `Base32`, `TotpEngine`, `PasswordHasher`, `KeystoreHelper`, `BackupCodeGenerator` | `crypto/` | Static crypto helpers ([4.1](#41-crypto-engine)) |
+| `AuditEvent`, `AppSettings`, `DeviceTrust` | `data/` | Constants and static rules ([4.2](#42-data-layer), [4.11](#411-trusted-devices), [4.13](#413-settings)) |
+| `Csv`, `CsvImporter`, `FileExporter`, `AvatarStore` | `io/` | Static file helpers ([4.8](#48-backup-codes-and-recovery), [4.9](#49-login-history-and-csv), [4.12](#412-profile-camera-and-gallery)) |
+| `BiometricSupport`, `DateRange`, `HelpPages`, `HistoryFormat`, `InputRules`, `MapMarkers` | `ui/` | Pure-logic helpers that are unit tested without a phone |
+| `SessionManager`, `LoginHandshake` | `data/` | **Singletons**: the private constructor is used once, for the static `INSTANCE` ([4.7](#47-biometric-and-sessions), [4.18](#418-login-handshake-guard)) |
+
+#### b. The anonymous `afterTextChanged` overrides
+
+Eight small `AfterTextChangedListener` objects are created inline in `onCreate` methods ([4.3](#43-ui-foundation-and-splash) explains the base class). Each one has the single method `public void afterTextChanged(Editable s)`, called by the text field after every edit:
+
+| Screen | Field | What the override does |
+|---|---|---|
+| `RegisterActivity.onCreate` | `inputUsername` | Clears the field's error (`layoutUsername.setError(null)`) |
+| `RegisterActivity.onCreate` | `inputPassword` | Clears the error and calls `showStrengthHint()` |
+| `RegisterActivity.onCreate` | `inputConfirm` | Clears the field's error |
+| `LoginActivity.onCreate` | `inputUsername`, `inputPassword` (two listeners) | Clear the field's error |
+| `EnrollActivity.onCreate` | `inputCode` | Clears the error |
+| `TotpVerifyActivity.onCreate` | `inputCode` | Clears the error and, when the typed length reaches `account.digits`, calls `submit(...)` (**auto-submit**) |
+| `BackupRecoveryActivity.onCreate` | `inputBackupCode` | Clears the error |
+
+The most interesting one, the password field of the register screen (real code):
+
+```java
+binding.inputPassword.addTextChangedListener(new AfterTextChangedListener() {
+    @Override
+    public void afterTextChanged(Editable s) {
+        binding.layoutPassword.setError(null);
+        showStrengthHint();
+    }
+});
+```
+
+
+---
+
 ## 5. Workflows
 
 This section follows the **data** from file to file. Each workflow has a sequence diagram and numbered steps in the form **`File` → `method`** → next **`File` → `method`**, naming what is passed (an Intent extra, a database row, a string). *"BG"* means the step runs on the background thread started by `BaseActivity.runInBackground`; *"UI"* means the UI thread.
@@ -11709,10 +14384,13 @@ This section follows the **data** from file to file. Each workflow has a sequenc
 | `username` | `String` | `RegisterActivity` → `LoginActivity` | Result extra `RegisterActivity.EXTRA_USERNAME` (Activity Result API) |
 | `suspicious_km` | `double` | `BiometricGateActivity` → `DashboardActivity` | Extra `DashboardActivity.EXTRA_SUSPICIOUS_KM` (only if far from the previous login) |
 | result code | `int` | `BackupRecoveryActivity`, `EnrollActivity` → `TotpVerifyActivity` | `RESULT_OK`, `BackupRecoveryActivity.RESULT_LOCKED`, `RESULT_CANCELED` |
+| login progress | in-memory stage (`REGISTERED`, `PASSWORD_OK`, `CODE_OK`) for one user | `RegisterActivity`, `LoginActivity`, `TotpVerifyActivity` → `LoginHandshake` → read by the next screen | A method call; proves the earlier steps ([4.18](#418-login-handshake-guard)) |
 | **session token** | 43-char `String` | created in `SessionManager.create` | Kept **only in memory** in `SessionManager`; the database gets its SHA-256 hash |
 | logged-in `userId` | `long` | `SessionManager.getUserId()` → every protected screen | A method call, **not** an Intent extra |
 | encrypted secret + IV | two Base64 `String`s | `totp_accounts.secret_enc`, `.iv` → `KeystoreHelper.decrypt` → raw `byte[]` | SQLite via `TotpAccountDao` |
 | OTP string | `String` of 6 digits | `TotpEngine.generate` → `DashboardActivity`; typed code → `TotpEngine.verify` | In memory only |
+| photo path | `String` | `AvatarStore.saveFrom` → `UserDao.setAvatarUri` → `users.avatar_uri` → `AvatarStore.load` | SQLite, file in `files/avatars/` |
+| settings | digits, period, algorithm, auto-lock ms, record-location | `SettingsActivity` → `AppSettings` → `SharedPreferences` → `EnrollActivity`, `SessionManager`, `LocationHelper` | Validated on every read |
 | place | `Double lat, lng` or `null` | `LocationHelper` → `BaseActivity.withCurrentLocation` → `AuditLogDao.log` | Callback, then `audit_log.lat/lng` |
 
 ---
@@ -11736,6 +14414,7 @@ sequenceDiagram
     participant K as KeystoreHelper
     participant TD as TotpAccountDao
     participant A as AuditLogDao
+    participant HS as LoginHandshake
     U->>L: tap Create account
     L->>R: registerLauncher.launch with explicit Intent
     U->>R: tap Register
@@ -11745,11 +14424,13 @@ sequenceDiagram
     PH-->>R: Result hash and salt as Base64
     R->>UD: insert(User) gives userId
     R->>A: log REGISTER
+    R->>HS: registered(userId)
     opt Trust this device ticked
         R->>DT: trustCurrentDevice
     end
     R-->>L: setResult OK with username
     R->>E: startActivity with EXTRA_USER_ID
+    E->>HS: allowsEnroll(userId)
     E->>VM: ViewModelProvider.get
     VM->>T: generateSecret gives 20 random bytes
     VM->>VM: Base32.encode gives 32 characters
@@ -11768,12 +14449,12 @@ sequenceDiagram
 1. **`LoginActivity`** → `onCreate` wires `buttonCreateAccount` → `registerLauncher.launch(new Intent(this, RegisterActivity.class))` → opens **`RegisterActivity`**.
 2. **`RegisterActivity`** → `onRegisterClicked` (UI): `InputRules.normalizeUsername` → `usernameError` / `passwordError`; the password is copied with `BaseActivity.readChars` into a `char[]`. It reads the check box `checkboxTrust.isChecked()` on the UI thread and calls `runInBackground(createAccount, onRegisterFinished)`.
 3. **`RegisterActivity`** → `createAccount` (BG) → **`UserDao`** → `findByUsername(username)` → **`PasswordHasher`** → `hash(char[])` (random 16-byte salt, PBKDF2 120,000 rounds; the array is wiped) returns `Result(hash, salt)` as Base64 → `UserDao.insert(User{username, passwordHash, salt, createdAt})` returns the new `userId` (−1 if taken).
-4. **`AuditLogDao`** → `log(userId, REGISTER, SUCCESS)`; if the box was ticked, **`DeviceTrust`** → `trustCurrentDevice` → `TrustedDeviceDao.insert` → `SharedPreferences` key `trusted_device_id_<userId>` → `AuditLogDao.log(DEVICE_TRUSTED)`.
+4. **`AuditLogDao`** → `log(userId, REGISTER, SUCCESS)`; **`LoginHandshake`** → `registered(userId, now)` (enrollment may now open for this account); if the box was ticked, **`DeviceTrust`** → `trustCurrentDevice` → `TrustedDeviceDao.insert` → `SharedPreferences` key `trusted_device_id_<userId>` → `AuditLogDao.log(DEVICE_TRUSTED)`.
 5. **`RegisterActivity`** → `onRegisterFinished(userId)` (UI): `setResult(RESULT_OK, new Intent().putExtra(EXTRA_USERNAME, username))` (delivered to Login's `registerLauncher` callback, which fills the username field) → `startActivity(EnrollActivity)` with `EXTRA_USER_ID = userId` → `finish()`.
-6. **`EnrollActivity`** → `onCreate` → `new ViewModelProvider(this).get(EnrollViewModel.class)` → the ViewModel constructor runs **`TotpEngine`** → `generateSecret()` (20 bytes from `SecureRandom`) and **`Base32`** → `encode(secret)` (32 characters). The secret stays in the ViewModel (and survives rotation); it is **not** in the database yet.
-7. **`EnrollActivity`** → `loadQrCode` (BG) → `UserDao.getById(userId)` (for the username) → `TotpEngine.buildOtpAuthUri("SecureAuth", username, base32, 6, 30, "HmacSHA1")` returns the `otpauth://totp/...` link → ZXing `BarcodeEncoder.encodeBitmap(uri, QR_CODE, 800, 800)` → `Bitmap` → `imageQr.setImageBitmap`.
-8. The user scans the QR with Google Authenticator and taps *I've scanned it*; **`EnrollActivity`** → `onConfirmClicked`: the text must match `\d{6}`; `model.copySecret()` → `TotpEngine.verify(secret, code, now, 6, 30, algo)`. Wrong → `AuditLogDao.log(ENROLL_VERIFY_FAIL, FAIL)` and an error on the field; nothing is stored.
-9. Correct → `runInBackground(saveAccount, onSaveFinished)`: **`KeystoreHelper`** → `encrypt(secret)` (AES-256-GCM, key `secureauth_totp_key` inside the Android Keystore, fresh IV) returns `ciphertext` + `iv` (Base64) → `TotpAccount{userId, secretEnc, iv, issuer="SecureAuth", digits=6, period=30, algo="HmacSHA1", createdAt}` → **`TotpAccountDao`** → `replaceForUser` (transaction: delete old, insert new) → `AuditLogDao.log(TOTP_ENROLLED)`; the secret copy is wiped.
+6. **`EnrollActivity`** → `onCreate` → **`LoginHandshake.allowsEnroll(userId, now)`** (or a live session of the same user; otherwise `goToLogin()`) → reads **`AppSettings`** (digits, period, algorithm; defaults 6, 30, `HmacSHA1`) into `settings` → `new ViewModelProvider(this).get(EnrollViewModel.class)` → the ViewModel constructor runs **`TotpEngine`** → `generateSecret()` (20 bytes from `SecureRandom`) and **`Base32`** → `encode(secret)` (32 characters). The secret stays in the ViewModel (and survives rotation); it is **not** in the database yet.
+7. **`EnrollActivity`** → `loadQrCode` (BG) → `UserDao.getById(userId)` (for the username) → `TotpEngine.buildOtpAuthUri("SecureAuth", username, base32, settings.digits, settings.period, settings.algo)` (by default 6, 30, `HmacSHA1`) returns the `otpauth://totp/...` link → ZXing `BarcodeEncoder.encodeBitmap(uri, QR_CODE, 800, 800)` → `Bitmap` → `imageQr.setImageBitmap`.
+8. The user scans the QR with Google Authenticator and taps *I've scanned it*; **`EnrollActivity`** → `onConfirmClicked`: the text must match `\d{settings.digits}`; `model.copySecret()` → `TotpEngine.verify(secret, code, now, 6, 30, algo)`. Wrong → `AuditLogDao.log(ENROLL_VERIFY_FAIL, FAIL)` and an error on the field; nothing is stored.
+9. Correct → `runInBackground(saveAccount, onSaveFinished)`: **`KeystoreHelper`** → `encrypt(secret)` (AES-256-GCM, key `secureauth_totp_key` inside the Android Keystore, fresh IV) returns `ciphertext` + `iv` (Base64) → `TotpAccount{userId, secretEnc, iv, issuer="SecureAuth", digits, period, algo (from `settings`; by default 6, 30, "HmacSHA1"), createdAt}` → **`TotpAccountDao`** → `replaceForUser` (transaction: delete old, insert new) → `AuditLogDao.log(TOTP_ENROLLED)`; the secret copy is wiped.
 10. `onSaveFinished(true)` → toast, `setResult(RESULT_OK)`, `finish()`. The user is back on **`LoginActivity`** with the username filled in. When the screen finishes, `EnrollViewModel.onCleared` wipes the secret and `EnrollActivity.onDestroy` deletes any cached QR PNG.
 
 *Sharing the QR image* (long-press on the QR) is a separate flow, see [5.11](#511-sharing-the-qr-image).
@@ -11800,6 +14481,7 @@ sequenceDiagram
     participant SM as SessionManager
     participant D as DashboardActivity
     participant A as AuditLogDao
+    participant HS as LoginHandshake
     U->>L: username and password
     L->>LH: requestCurrentLocation (first time asks permission)
     LH-->>L: Location or null
@@ -11807,7 +14489,9 @@ sequenceDiagram
     L->>PH: verify(password, hash, salt)
     PH-->>L: true
     L->>A: log PASSWORD_OK with lat and lng
+    L->>HS: passwordAccepted(userId)
     L->>TV: startActivity with EXTRA_USER_ID
+    TV->>HS: allowsCodeStep(userId)
     TV->>K: decrypt(secretEnc, iv)
     K-->>TV: secret bytes
     U->>TV: 6 digit code
@@ -11817,13 +14501,16 @@ sequenceDiagram
     TV->>LM: recordSuccess
     TV->>DT: isCurrentDeviceRevoked
     DT-->>TV: false
+    TV->>HS: codeAccepted(userId)
     TV->>B: startActivity with EXTRA_USER_ID
+    B->>HS: allowsBiometricStep(userId)
     B->>BP: authenticate(promptInfo)
     BP-->>B: onAuthenticationSucceeded
     B->>LH: requestCurrentLocation
     B->>A: log BIOMETRIC_OK
     B->>SM: create(sessionDao, userId, autoLockMs, now)
     SM-->>B: raw token kept in memory, hash in sessions table
+    B->>HS: clear, the handshake is complete
     B->>A: log SESSION_START with lat and lng
     B->>D: startActivity new task, EXTRA_SUSPICIOUS_KM if far
     D->>SM: enforceSession gives ACTIVE
@@ -11833,17 +14520,17 @@ sequenceDiagram
 1. **`LoginActivity`** → `onLoginClicked` (UI): both fields non-empty → `ensureLocationPermission(...)` (see [5.6](#56-audit-logging-location-capture-and-the-suspicious-login-check)) → `withCurrentLocation(location -> startPasswordCheck(username, location))`.
 2. `startPasswordCheck` re-reads the password (`readChars`) and calls `runInBackground(checkPassword(username, password, lat, lng), onCheckFinished)`.
 3. **`LoginActivity`** → `checkPassword` (BG) → **`UserDao.findByUsername`** → (unknown user: `PasswordHasher.verify` against a dummy hash for equal timing, `BAD_CREDENTIALS`) → **`LockoutManager`** → `clearExpiredLock`, `remainingLockMs` (locked: return `LOCKED` without checking the password) → **`PasswordHasher.verify(password, user.passwordHash, user.salt)`**.
-4. Correct → **`AuditLogDao.log(PASSWORD_OK, SUCCESS, lat, lng)`**; the failure counter is **not** reset yet. `onCheckFinished(OK)` (UI) → `startActivity(new Intent(this, TotpVerifyActivity.class).putExtra(EXTRA_USER_ID, userId))`. *Data: `userId` as an Intent extra.*
-5. **`TotpVerifyActivity`** → `onCreate` → `loadScreenData` (BG): `UserDao.getById`, `LockoutManager.clearExpiredLock`, `TotpAccountDao.listForUser` → `onLoaded`: the account (`secretEnc`, `iv`, `digits`, `period`, `algo`) is kept; the input is limited to `digits` characters and enabled.
+4. Correct → **`AuditLogDao.log(PASSWORD_OK, SUCCESS, lat, lng)`** → **`LoginHandshake.passwordAccepted(userId, now)`**; the failure counter is **not** reset yet. `onCheckFinished(OK)` (UI) → `startActivity(new Intent(this, TotpVerifyActivity.class).putExtra(EXTRA_USER_ID, userId))`. *Data: `userId` as an Intent extra.*
+5. **`TotpVerifyActivity`** → `onCreate` → **`LoginHandshake.allowsCodeStep(userId, now)`** (not allowed: `goToLogin()`) → `loadScreenData` (BG): `UserDao.getById`, `LockoutManager.clearExpiredLock`, `TotpAccountDao.listForUser` → `onLoaded`: the account (`secretEnc`, `iv`, `digits`, `period`, `algo`) is kept; the input is limited to `digits` characters and enabled.
 6. The user types 6 digits; the text watcher calls `submit(code)` → `runInBackground(checkCode, onChecked)`. **`checkCode`** (BG): re-check the lock → **`KeystoreHelper.decrypt(secretEnc, iv)`** returns the raw secret bytes → **`TotpEngine.verify(secret, code, now, digits, period, algo)`** (the secret is wiped in a `finally`).
 7. Correct → **`AuditLogDao.log(TOTP_OK)`** → **`LockoutManager.recordSuccess`** (counter reset) → `Outcome.OK` → `onChecked` → `continueAfterCodeStep`.
-8. `continueAfterCodeStep` (BG) → **`DeviceTrust.isCurrentDeviceRevoked`** → not revoked → `goToBiometricGate`: `startActivity(BiometricGateActivity)` with `EXTRA_USER_ID`, then `finish()` (Back cannot return). *(If revoked, see [5.8](#58-trusted-device-revoke-and-its-effect-on-the-next-login).)*
-9. **`BiometricGateActivity`** → `onCreate` → `BiometricSupport.authenticators(Build.VERSION.SDK_INT)` → `new BiometricPrompt(...)` → `startAuthentication` → `BiometricManager.canAuthenticate` → `BiometricSupport.fromCanAuthenticate` → `READY` → `prompt.authenticate(promptInfo)` (the system fingerprint/PIN dialog).
-10. `PromptCallback.onAuthenticationSucceeded` → `handleSuccess` (once, guarded by `flowDone`) → `withCurrentLocation` → `completeLogin(lat, lng)` (BG): `LockoutManager.recordSuccess` → `AuditLogDao.log(BIOMETRIC_OK)` → previous-login comparison (see 5.6) → **`SessionManager.getInstance().create(sessionDao, userId, autoLockMs, now)`**: deletes expired rows and the user's older sessions, makes a 32-byte token, **inserts the SHA-256 hash with `expires_at = now + autoLockMs`**, and keeps the raw token in memory → `AuditLogDao.log(SESSION_START, SUCCESS, lat, lng)`.
+8. `continueAfterCodeStep` (BG) → **`DeviceTrust.isCurrentDeviceRevoked`** → not revoked → `goToBiometricGate`: **`LoginHandshake.codeAccepted(userId, now)`** (fails if the password step went stale: back to Login), then `startActivity(BiometricGateActivity)` with `EXTRA_USER_ID`, then `finish()` (Back cannot return). *(If revoked, see [5.8](#58-trusted-device-revoke-and-its-effect-on-the-next-login).)*
+9. **`BiometricGateActivity`** → `onCreate` → **`LoginHandshake.allowsBiometricStep(userId, now)`** (only after the code step; otherwise `goToLogin()`) → `BiometricSupport.authenticators(Build.VERSION.SDK_INT)` → `new BiometricPrompt(...)` → `startAuthentication` → `BiometricManager.canAuthenticate` → `BiometricSupport.fromCanAuthenticate` → `READY` → `prompt.authenticate(promptInfo)` (the system fingerprint/PIN dialog).
+10. `PromptCallback.onAuthenticationSucceeded` → `handleSuccess` (once, guarded by `flowDone`) → `withCurrentLocation` → `completeLogin(lat, lng)` (BG): `LockoutManager.recordSuccess` → `AuditLogDao.log(BIOMETRIC_OK)` → previous-login comparison (see 5.6) → **`SessionManager.getInstance().create(sessionDao, userId, autoLockMs, now)`**: deletes expired rows and the user's older sessions, makes a 32-byte token, **inserts the SHA-256 hash with `expires_at = now + autoLockMs`**, and keeps the raw token in memory → **`LoginHandshake.clear()`** (nothing left to prove) → `AuditLogDao.log(SESSION_START, SUCCESS, lat, lng)`.
 11. UI: `startActivity(DashboardActivity)` with flags `NEW_TASK | CLEAR_TASK` (empty back stack) and, if far from the last login, `EXTRA_SUSPICIOUS_KM`; `finish()`.
 12. **`DashboardActivity`** → `onCreate` → **`BaseActivity.enforceSession`** → `SessionManager.check(sessionDao, now)` → `SessionDao.findValid(userId, hashToken(token), now)` → `ACTIVE`; `userId = SessionManager.getUserId()` (from the session, not from an extra) → the live code appears (5.3).
 
-Any step that fails stops the flow: a wrong password, code or fingerprint never reaches the next Activity; three failures in a row (all steps share the counter) lock the account (5.4). Cancelling the fingerprint writes `BIOMETRIC_FAIL / CANCELLED` and returns to Login without a session.
+Going back to Login (`LoginActivity.onResume`), logging out, or finishing the fingerprint screen also calls `LoginHandshake.clear()`, so progress cannot be reused. Any step that fails stops the flow: a wrong password, code or fingerprint never reaches the next Activity; three failures in a row (all steps share the counter) lock the account (5.4). Cancelling the fingerprint writes `BIOMETRIC_FAIL / CANCELLED` and returns to Login without a session.
 
 ---
 
@@ -11872,7 +14559,7 @@ sequenceDiagram
     D->>D: onStop removes callbacks and wipes the secret
 ```
 
-1. **`DashboardActivity`** → `onStart` → `enforceSession` → `visible = true` → `loadData` (BG): `UserDao.getById`, `TotpAccountDao.listForUser` → **`KeystoreHelper.decrypt(found.secretEnc, found.iv)`** → `Data(user, account, secret)` → `onDataLoaded` (UI): keeps `secret` and `account`, shows issuer and username, `ring.setPeriodSeconds(account.period)`, `handler.removeCallbacks(tick)`, `handler.post(tick)`.
+1. **`DashboardActivity`** → `onStart` → `enforceSession` → `visible = true` → `loadData` (BG): `UserDao.getById`, `TotpAccountDao.listForUser`, `AvatarStore.load` (a 40 dp copy of the profile photo) → **`KeystoreHelper.decrypt(found.secretEnc, found.iv)`** → `Data(user, account, secret, avatar)` → `onDataLoaded` (UI): keeps `secret` and `account`, shows issuer and username, `showAvatar` (round photo in the toolbar), `ring.setPeriodSeconds(account.period)`, `handler.removeCallbacks(tick)`, `handler.post(tick)`.
 2. **`tick.run`**: `SessionManager.isActive(now)`; if the auto-lock time ran out → `enforceSession()` (see 5.10) and stop. Otherwise → `updateCode` → then `handler.postDelayed(this, 1000 - (now % 1000) + 5)` — so it wakes just after the next whole second.
 3. **`updateCode`**: `TotpEngine.generate(secret, now, digits, period, algo)` → if the string differs from `lastCode` (a new 30-second window has begun) → `binding.textCode.setText(TotpEngine.formatForDisplay(code))` (`123456` → `123 456`). Every second: `secondsLeft = TotpEngine.secondsRemaining(now, period)`; `progress = 1 − (now mod periodMs)/periodMs` → **`CountdownRingView.setProgress(progress)`** → `invalidate()` → `onDraw` (red in the last 5 s); the text "New code in N s" and the ring's content description are updated.
 4. **Pull to refresh**: `swipeRefresh.setOnRefreshListener(this::loadData)` re-runs step 1 (and `setRefreshing(false)` in `onDataLoaded`).
@@ -11964,7 +14651,7 @@ sequenceDiagram
 ```
 
 1. **`TotpVerifyActivity`** → the button `buttonBackupCode` → `recoveryLauncher.launch(new Intent(this, BackupRecoveryActivity.class).putExtra(EXTRA_USER_ID, userId))`.
-2. **`BackupRecoveryActivity`** → `onCreate` → `loadState` (BG): `UserDao.getById`, `LockoutManager.clearExpiredLock`, `remainingLockMs`, `BackupCodeDao.listUnused(userId).size()` → locked: `finishLocked` (lock dialog, then `setResult(RESULT_LOCKED)`); no unused codes: shows "no unused backup codes"; else enables the field and button.
+2. **`BackupRecoveryActivity`** → `onCreate` → **`LoginHandshake.allowsCodeStep(userId, now)`** (recovery stands in for step 2, so step 1 must have passed; otherwise `goToLogin()`) → `loadState` (BG): `UserDao.getById`, `LockoutManager.clearExpiredLock`, `remainingLockMs`, `BackupCodeDao.listUnused(userId).size()` → locked: `finishLocked` (lock dialog, then `setResult(RESULT_LOCKED)`); no unused codes: shows "no unused backup codes"; else enables the field and button.
 3. The user types a code (for example `K7QM-X2PD`, case and hyphen optional) and the radio choice (*log in* is the default). `onContinueClicked` → `BackupCodeGenerator.isWellFormed(typed)`: if false, only a format error is shown (**not** a failed attempt).
 4. `runInBackground(checkCode(typed), onChecked)` → **`checkCode`** (BG): re-check the lock → `BackupCodeDao.listUnused(userId)` → for each unused row → **`BackupCodeGenerator.matches(typed, candidate.codeHash, candidate.salt)`** → `normalize(typed)` → **`PasswordHasher.verify(canonical.toCharArray(), hash, salt)`** (one slow hash per unused code, at most 10).
 5. A match → **`BackupCodeDao.markUsed(candidate.id)`** (`UPDATE ... WHERE id = ? AND used = 0`). It must return `1`; `0` means the code was spent a moment ago and counts as wrong. Then `AuditLogDao.log(BACKUP_CODE_USED)` and `LockoutManager.recordSuccess(userId)` → `Outcome.OK`.
@@ -12069,11 +14756,12 @@ sequenceDiagram
 | `SESSION_START` | `SUCCESS` (+ place) | `BiometricGateActivity` → `completeLogin` |
 | `SUSPICIOUS_LOCATION` | `WARNING` (+ place) | `BiometricGateActivity` → `completeLogin` |
 | `LOGOUT` | `SUCCESS` | `DashboardActivity` → `logout` → `BaseActivity.endSession` |
+| `AUTO_LOCK` | `SUCCESS` | `BaseActivity` → `handleScreenOff` → `endSession` (screen turned off while logged in) |
 | `SESSION_EXPIRED` | `SUCCESS` | `BaseActivity` → `enforceSession` → `endSession` |
 | `DEVICE_TRUSTED` | `SUCCESS` | `DeviceTrust` → `trustCurrentDevice` |
 | `DEVICE_RENAMED` / `DEVICE_REVOKED` | `SUCCESS` | `TrustedDevicesActivity` → `rename` / `revoke` |
 
-All 20 constants of `AuditEvent` have a writer; the planned `AUTO_LOCK` event does not exist (see 5.10).
+All 21 event constants of `AuditEvent` have a writer (`ProjectRulesTest.everyAuditEventNamedInTheCodeIsDeclaredInOnePlace` keeps them declared in one place).
 
 ---
 
@@ -12187,13 +14875,51 @@ sequenceDiagram
 
 ---
 
-### 5.9 Profile photo from camera or gallery — not implemented
+### 5.9 Profile photo from camera or gallery
 
-There is no workflow to describe, because the Profile screen is not built (Phase 13). What exists: the Dashboard menu item `action_profile` shows a toast ("Profile is coming in a later phase"), and `users.avatar_uri` is a nullable column that nothing writes. See [4.12](#412-profile-camera-and-gallery--not-built-yet) for the real code and for what the plan intends. The nearest existing flow that stores an image on the device is the QR share in [5.11](#511-sharing-the-qr-image).
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant D as DashboardActivity
+    participant P as ProfileActivity
+    participant FP as FileProvider
+    participant C as Camera app
+    participant G as Gallery picker
+    participant AS as AvatarStore
+    participant UD as UserDao
+    U->>D: menu Profile, or tap the toolbar photo
+    D->>P: startActivity
+    P->>UD: getById then AvatarStore.load in the background
+    U->>P: Change photo
+    alt Take photo
+        P-->>U: camera explanation then the system permission dialog
+        P->>FP: getUriForFile for cache camera profile_capture.jpg
+        P->>C: cameraLauncher.launch(Uri) which starts ACTION_IMAGE_CAPTURE
+        C-->>P: onPhotoTaken(true)
+    else Choose from gallery
+        P->>G: galleryLauncher.launch with images only
+        G-->>P: onPhotoPicked(Uri)
+    end
+    P->>AS: saveFrom(context, userId, Uri) in the background
+    AS-->>P: path of the new JPEG in files avatars
+    P->>UD: setAvatarUri(userId, path)
+    P->>AS: delete(previous path)
+    P->>P: loadProfile shows the round photo
+    D->>AS: load(path, 40 dp) at the next onStart
+```
+
+1. **`DashboardActivity`** → `onOptionsItemSelected(action_profile)` or the toolbar photo (`android.R.id.home`) → `startActivity(ProfileActivity)`. **`ProfileActivity`** → `onCreate` → `enforceSession` → `userId = SessionManager.getUserId()` → `loadProfile` (BG): `UserDao.getById`, `TotpAccountDao.listForUser` (issuer), `AvatarStore.load(context, user.avatarUri, 512)` → `showProfile`.
+2. *Change photo* → `showPhotoChoices` (list dialog; *Take photo* only if `FEATURE_CAMERA_ANY`).
+3. **Camera.** `startCamera`: permission already granted → `launchCamera`; otherwise a rationale dialog → **Allow** → `cameraPermissionLauncher.launch(CAMERA)` → `onCameraPermissionResult(granted)` (denied: toast pointing to the gallery). `launchCamera` → file `cache/camera/profile_capture.jpg` (old leftover deleted) → `FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file)` → `cameraLauncher.launch(uri)` (`TakePicture`, an implicit `ACTION_IMAGE_CAPTURE`). Answer `onPhotoTaken(true)`: the file exists → `savePhoto(Uri.fromFile(file), file)`; cancelled → the empty file is deleted and nothing changes.
+4. **Gallery.** `startGallery` → `galleryLauncher.launch(PickVisualMediaRequest ... ImageOnly)` → `onPhotoPicked(Uri)` (`null` = closed: nothing changes) → `savePhoto(uri, null)`.
+5. **`savePhoto`** (BG): **`AvatarStore.saveFrom(context, userId, source)`** → `decode` (two passes, `inSampleSize`) → `orientationOf` (EXIF) → `rotate` → `centreSquare(…, 512)` → `avatar_<userId>_<time>.jpg` (JPEG quality 85) in `files/avatars/` → returns the path (or `null` for a non-picture). Then `UserDao.getById` (previous path) → **`UserDao.setAvatarUri(userId, path)`** → `AvatarStore.delete(context, previous)`; the camera's temporary file is deleted in a `finally`. UI: toast "Profile photo updated" (or "That file could not be used as a photo") and `loadProfile`.
+6. **Dashboard.** `DashboardActivity.loadData` (BG) calls `AvatarStore.load(context, user.avatarUri, 40 dp)` and `onDataLoaded` → `showAvatar` puts it in the toolbar as a round icon (`RoundedBitmapDrawableFactory`, `setCircular(true)`). *Data passed:* the photo **path** (a `String` in `users.avatar_uri`), never the bitmap, between screens.
 
 ---
 
-### 5.10 Auto-lock: session expiry (and the missing screen-off lock)
+### 5.10 Auto-lock: session expiry and screen-off
+
+**By time: the session expires**
 
 ```mermaid
 sequenceDiagram
@@ -12213,11 +14939,35 @@ sequenceDiagram
     BA->>L: goToLogin with a cleared back stack
 ```
 
-1. At login, **`SessionManager.create`** stores `expires_at = now + autoLockMs`, where `autoLockMs = SessionManager.getAutoLockMs(context)` (preference `auto_lock_ms`, default **5 minutes**, always kept within 1–30 min; there is no Settings screen to change it yet).
+1. At login, **`SessionManager.create`** stores `expires_at = now + autoLockMs`, where `autoLockMs = SessionManager.getAutoLockMs(context)` → `AppSettings.getAutoLockMs` (preference `auto_lock_ms`, default **5 minutes**, always within 1–30 min; changed on the Settings screen, see 5.13, and used from the next login).
 2. **While a protected screen is open**: `DashboardActivity.tick` runs every second → `SessionManager.isActive(now)` (no database) → when `now >= expiresAt` → `enforceSession()`. **When a protected screen comes back to the foreground**: `BaseActivity.onResume` → `enforceSession()`; protected screens also call it in `onCreate`.
-3. **`BaseActivity.enforceSession`** → `SessionManager.check(sessions, now)`: `NONE` (no token, or the database row is gone) or `EXPIRED`. For both: `endSession(timedOut ? SESSION_EXPIRED : null)` → `SessionManager.clear()` returns `Snapshot(userId, sessionId)` → (BG) `SessionDao.delete(sessionId)` and `AuditLogDao.log(userId, SESSION_EXPIRED, SUCCESS)` → if it timed out, toast "Session expired. Please log in again." → `goToLogin()` (`NEW_TASK | CLEAR_TASK`, then `finish()`).
+3. **`BaseActivity.enforceSession`** → `SessionManager.check(sessions, now)`: `NONE` (no token, or the database row is gone) or `EXPIRED`. For both: `endSession(timedOut ? SESSION_EXPIRED : null)` → `LoginHandshake.clear()` → `SessionManager.clear()` returns `Snapshot(userId, sessionId)` → (BG) `SessionDao.delete(sessionId)` and `AuditLogDao.log(userId, SESSION_EXPIRED, SUCCESS)` → if it timed out, toast "Session expired. Please log in again." → `goToLogin()` (`NEW_TASK | CLEAR_TASK`, then `finish()`).
 4. **Manual logout** is the same tail: `DashboardActivity.logout` → `endSession(LOGOUT)` → `goToLogin`.
-5. **Not implemented:** locking when the **screen turns off**. The plan's `ScreenOffReceiver` (a `BroadcastReceiver` for `ACTION_SCREEN_OFF`) and the `AUTO_LOCK` audit event do not exist (see [4.15](#415-broadcast-receivers--not-built-yet)). Today an unlocked app that is switched to the background stays valid until the 5-minute expiry, and is then rejected at the next `onResume`.
+
+**By event: the screen turns off**
+
+```mermaid
+sequenceDiagram
+    participant OS as Android
+    participant R as ScreenOffReceiver
+    participant BA as BaseActivity
+    participant SM as SessionManager
+    participant SD as SessionDao
+    participant A as AuditLogDao
+    participant L as LoginActivity
+    OS->>R: ACTION_SCREEN_OFF broadcast
+    R->>BA: Listener.onScreenOff then handleScreenOff
+    BA->>SM: isActive(now) must be true
+    BA->>BA: endSession(AUTO_LOCK)
+    BA->>SM: clear gives a Snapshot
+    BA->>SD: delete(sessionId) in the background
+    BA->>A: log AUTO_LOCK
+    BA->>L: goToLogin with a cleared back stack
+```
+
+5. **`BaseActivity`** → `onStart` → `registerReceivers`: `ContextCompat.registerReceiver(this, screenOffReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF), RECEIVER_NOT_EXPORTED)` (and the airplane receiver, see 5.12); `onStop` → `unregisterReceivers`.
+6. The screen turns off → Android sends the broadcast → **`ScreenOffReceiver.onReceive`** (action is `ACTION_SCREEN_OFF`) → `listener.onScreenOff()` → **`BaseActivity.handleScreenOff`**: if the screen is not protected (`requiresSession()` false, for example Login or Help) or there is no live session (`SessionManager.isActive`), nothing happens. Otherwise `endSession(AuditEvent.AUTO_LOCK)` (clears the handshake and the session, deletes the row, writes `AUTO_LOCK`) and `goToLogin()`.
+7. After a screen-off lock the Dashboard cannot be reopened without logging in again (`ReceiverFlowTest`).
 
 ---
 
@@ -12247,9 +14997,97 @@ sequenceDiagram
 
 ---
 
+### 5.12 Airplane-mode reminder
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant OS as Android
+    participant R as AirplaneModeReceiver
+    participant BA as BaseActivity
+    U->>OS: switch airplane mode on
+    OS->>R: ACTION_AIRPLANE_MODE_CHANGED with state true
+    R->>BA: Listener.onAirplaneModeOn then handleAirplaneModeOn
+    BA-->>U: Snackbar Offline, TOTP still works, it only needs the clock
+```
+
+1. While any screen is visible, **`BaseActivity.registerReceivers`** has registered `AirplaneModeReceiver` for `Intent.ACTION_AIRPLANE_MODE_CHANGED` with `RECEIVER_NOT_EXPORTED`.
+2. The user switches airplane mode on or off → Android sends the broadcast with the extra `"state"` → **`AirplaneModeReceiver.onReceive`**: only `state == true` is passed on → `listener.onAirplaneModeOn()`.
+3. **`BaseActivity.handleAirplaneModeOn`** → `Snackbar.make(findViewById(android.R.id.content), R.string.airplane_mode_message, LENGTH_LONG).show()`. It shows on any screen. Switching airplane mode **off** shows nothing. *No data is stored.*
+
+---
+
+### 5.13 Settings: choices, the next enrollment and the next login
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant D as DashboardActivity
+    participant S as SettingsActivity
+    participant AP as AppSettings
+    participant E as EnrollActivity
+    participant TD as TotpAccountDao
+    participant B as BiometricGateActivity
+    participant SM as SessionManager
+    U->>D: menu Settings
+    D->>S: startActivity
+    U->>S: choose 8 digits in the Spinner
+    S->>AP: setDigits(8) saved at once
+    S-->>U: red warning about Google Authenticator
+    U->>S: Change auto-lock, pick 0 hours 10 minutes
+    S->>AP: autoLockMsFromPicker then setAutoLockMs
+    U->>S: Set up authenticator again, then Continue
+    S->>E: startActivity with EXTRA_USER_ID from the session
+    E->>AP: getDigits, getPeriod, getAlgo
+    E->>TD: replaceForUser(new account) after a correct code
+    Note over AP,SM: the auto-lock time is used at the next login
+    B->>SM: create(sessionDao, userId, AppSettings auto-lock, now)
+```
+
+1. **`DashboardActivity`** → `onOptionsItemSelected(action_settings)` → `startActivity(SettingsActivity)`. **`SettingsActivity`** → `onCreate` → `enforceSession` → `setUpAuthenticatorSpinners` (labels from `AppSettings.DIGIT_CHOICES` etc., selection from `AppSettings.getDigits/getPeriod/getAlgo`, **then** the listeners).
+2. A spinner choice → `ChoiceListener.onItemSelected(position)` → `AppSettings.setDigits/setPeriod/setAlgo(this, CHOICES[position])` (only valid values are saved) → `showWarningIfNeeded` → `AppSettings.differsFromDefaults` → the red note appears or disappears. **The existing authenticator is untouched.**
+3. *Change* (auto-lock) → `showAutoLockPicker` → `TimePickerDialog` (24 h, starts at 0 : current minutes) → `onAutoLockPicked(hour, minute)` → `AppSettings.autoLockMsFromPicker` (−1 outside 1–30 minutes: toast and the picker opens again) → `AppSettings.setAutoLockMs` → `showAutoLock`.
+4. The check box → `AppSettings.setRecordLocation`; next login, `LocationHelper.isRecordingEnabled` → `AppSettings.isRecordLocation` decides whether a place is looked up.
+5. *Set up authenticator again* → `confirmSetupAgain` (dialog) → `startActivity(EnrollActivity)` with `EXTRA_USER_ID = SessionManager.getUserId()`. **`EnrollActivity.onCreate`** accepts it because the **same user has a live session**; it copies `AppSettings.getDigits/getPeriod/getAlgo` into `settings`, so the QR link, the confirmation length and the saved account use the new choices; after a correct code `TotpAccountDao.replaceForUser` replaces the old authenticator (the user must scan the new QR code).
+6. **Auto-lock** applies from the next login: `BiometricGateActivity.completeLogin` → `SessionManager.getAutoLockMs(this)` → `AppSettings.getAutoLockMs` → `SessionManager.create(..., autoLockMs, now)`.
+
+---
+
+### 5.14 Help (WebView)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant H as HelpActivity
+    participant W as WebView
+    participant HP as HelpPages
+    U->>H: menu Help
+    H->>W: loadUrl for the local help page in assets
+    U->>H: tap RFC 6238
+    H->>W: loadUrl for the RFC page on the internet
+    U->>W: tap a link on the page
+    W->>H: shouldOverrideUrlLoading(request)
+    H->>HP: isAllowed(url)
+    alt allowed address
+        H-->>W: return false, the WebView loads it
+    else any other address
+        H-->>U: toast, return true, nothing opens
+    end
+    U->>H: Back
+    H->>W: canGoBack then goBack
+```
+
+1. **`DashboardActivity`** → `onOptionsItemSelected(action_help)` → `startActivity(HelpActivity)` (no session is needed). **`HelpActivity.onCreate`**: JavaScript, file access and content access off → `PageClient` and `ProgressClient` → `show(HelpPages.LOCAL_URL)` = `file:///android_asset/help.html` (works offline).
+2. *RFC 6238* → `show(HelpPages.RFC_URL)` = `https://datatracker.ietf.org/doc/html/rfc6238` (needs the `INTERNET` permission; if offline, `PageClient.onReceivedError` shows the error text).
+3. A tapped link → `PageClient.shouldOverrideUrlLoading` → `HelpPages.isAllowed(url)` → allowed: return `false` (the link loads inside this `WebView`); otherwise toast "Only the help pages can be opened here" and return `true`.
+4. `ProgressClient.onProgressChanged` moves the progress bar and hides it at 100 %.
+5. **Back**: the `OnBackPressedCallback` calls `webView.goBack()` while there is history, then lets the screen close. A rotation keeps the page and history (`saveState` / `restoreState`).
+
+---
+
 ## 6. Course policy coverage matrix
 
-**How to read it.** ✅ = implemented and demonstrable · 🟡 = partly implemented · ❌ = not covered (the reason is given). "Where to demonstrate" names the screen and what to tap. File names are in `app/src/main/java/com/secureauth/simulator/` (`ui/`, `crypto/`, `data/`, `io/`, `location/`, `views/`) and `app/src/main/res/` unless a full path is given. The matrix follows the course items as listed in the project brief; the syllabus text itself is not in this repository.
+**How to read it.** ✅ = implemented and demonstrable · 🟡 = partly implemented · ❌ = not covered (the reason is given). "Where to demonstrate" names the screen and what to tap. File names are in `app/src/main/java/com/secureauth/simulator/` (`ui/`, `crypto/`, `data/`, `io/`, `location/`, `receiver/`, `views/`) and `app/src/main/res/` unless a full path is given. The matrix follows the course items as listed in the project brief; the syllabus text itself is not in this repository.
 
 ### 6.1 Units
 
@@ -12257,66 +15095,64 @@ sequenceDiagram
 |---|---|---|---|---|
 | **Unit 1** — Android Studio setup and emulator | ✅ | `app/build.gradle.kts`, `gradle/libs.versions.toml`, `README.md`; manifest launcher filter in `AndroidManifest.xml` (`SplashActivity`) | Run the app on the Pixel emulator (PIN + fingerprint set in Extended controls) | — |
 | **Unit 2** — simple controls | ✅ | `activity_login.xml`, `activity_register.xml`, `activity_totp_verify.xml` (`TextInputEditText`, `MaterialButton`, `TextView`) | Login, Register, TOTP screens | — |
-| **Unit 2** — check boxes | ✅ | `activity_register.xml` (`checkbox_trust`); `RegisterActivity.onRegisterClicked` | Register → "Trust this device" | Decides whether the phone enters `trusted_devices` |
+| **Unit 2** — check boxes | ✅ | `activity_register.xml` (`checkbox_trust`), `RegisterActivity.onRegisterClicked`; `activity_settings.xml` (`checkbox_record_location`), `SettingsActivity.setUpLocationCheckBox` | Register → "Trust this device"; Settings → "Record login location" | — |
 | **Unit 2** — radio buttons | ✅ | `activity_backup_recovery.xml` (`RadioGroup`); `BackupRecoveryActivity.onChecked` | TOTP screen → "Use a backup code instead" | Two options: log in / set up a new authenticator |
-| **Unit 2** — screen layout | ✅ | `ConstraintLayout` (`activity_splash.xml`); `ScrollView`+`LinearLayout` (forms); `FrameLayout` (`activity_dashboard.xml` ring + overlay); `SwipeRefreshLayout` | Splash, Login, Dashboard | — |
-| **Unit 2** — spinner | ❌ | — | — | The Settings screen (Phase 14) is not built; the plan puts the digits/period/algorithm spinners there |
+| **Unit 2** — screen layout | ✅ | `ConstraintLayout` (`activity_splash.xml`); `ScrollView`+`LinearLayout` (forms, settings, profile); `FrameLayout` (dashboard ring, help); `SwipeRefreshLayout` | Splash, Login, Dashboard, Settings | — |
+| **Unit 2** — spinner | ✅ | `SettingsActivity.setUpAuthenticatorSpinners`, `prepare`, `ChoiceListener` | Dashboard ⋮ → Settings → Code length / Code changes every / Algorithm | — |
 | **Unit 2** — menus | ✅ | Options menus: `DashboardActivity.onCreateOptionsMenu`/`onOptionsItemSelected` (`menu_dashboard.xml`), `LoginHistoryActivity` (`menu_login_history.xml`). Context menus: `EnrollActivity.onCreateContextMenu` (`context_enroll_qr.xml`), `TrustedDevicesActivity.onCreateContextMenu` (`context_trusted_device.xml`) | Dashboard ⋮ menu; long-press the QR; long-press a trusted device | — |
 | **Unit 2** — date picker | ✅ | `LoginHistoryActivity.showFromPicker`, `showToPicker` (`DatePickerDialog`) | Login history → Filter by date | — |
 | **Unit 2** — touch listener | ✅ | `DashboardActivity.setUpTapToCopy` (`OnTouchListener`) | Dashboard → press and hold the code (dims) | — |
 | **Unit 2** — graphics | ✅ | `views/CountdownRingView.onDraw`, `onMeasure` (`Canvas`, `Paint`, `drawArc`) | Dashboard ring | — |
 | **Unit 2** — toasts | ✅ | `BaseActivity.showToast` (two overloads), used on all screens | Wrong password; tap the code on the Dashboard | — |
-| **Unit 2** — multiscreen apps | ✅ | 12 Activities; explicit Intents e.g. `SplashActivity.onCreate`, `LoginActivity.onCheckFinished`, `TotpVerifyActivity.goToBiometricGate` | Whole login flow | — |
-| **Unit 2** — pop-up dialogs | ✅ | `BaseActivity.showLockDialog`, `ensureLocationPermission`; `EnrollActivity.confirmShareQr`; `BackupCodesActivity.confirmGenerate`, `showCodesDialog`; `TrustedDevicesActivity.showRenameDialog`, `showRevokeDialog`; `DashboardActivity.showSuspiciousLoginDialog` | Three wrong passwords; Backup codes → Generate; long-press a device | — |
-| **Unit 3** — displaying images | ✅ | `EnrollActivity.loadQrCode` (`ImageView` + ZXing `Bitmap`); `drawable/ic_status_ok.xml`, `ic_status_fail.xml` (vector icons in list rows) | Registration → QR screen; History rows | No photo gallery in the app; images are the QR and status icons |
-| **Unit 3** — images stored on the device | 🟡 | `EnrollActivity.writeQrToCache` (PNG in `cache/qr/`, shared through `FileProvider`) | Long-press the QR → Share | The profile photo (Phase 13) that would be stored permanently is not built |
+| **Unit 2** — multiscreen apps | ✅ | 15 Activities; explicit Intents e.g. `SplashActivity.onCreate`, `LoginActivity.onCheckFinished`, `TotpVerifyActivity.goToBiometricGate`, `DashboardActivity.onOptionsItemSelected` | Whole app | — |
+| **Unit 2** — pop-up dialogs | ✅ | `BaseActivity.showLockDialog`, `ensureLocationPermission`; `EnrollActivity.confirmShareQr`; `BackupCodesActivity.confirmGenerate`, `showCodesDialog`; `TrustedDevicesActivity.showRenameDialog`, `showRevokeDialog`; `DashboardActivity.showSuspiciousLoginDialog`; `ProfileActivity.showPhotoChoices`; `SettingsActivity.confirmSetupAgain` | Three wrong passwords; Backup codes → Generate; long-press a device; Profile → Change photo | — |
+| **Unit 3** — displaying images | ✅ | `EnrollActivity.loadQrCode` (`ImageView` + ZXing `Bitmap`); `ProfileActivity.showProfile` (`ShapeableImageView`); `DashboardActivity.showAvatar`; `drawable/ic_status_ok.xml`, `ic_status_fail.xml` | Registration → QR screen; Profile; History rows | — |
+| **Unit 3** — images stored on the device | ✅ | `io/AvatarStore.saveFrom`, `load`, `delete` (private `files/avatars/`); `EnrollActivity.writeQrToCache` (QR PNG in `cache/qr/`) | Profile → Change photo; long-press the QR → Share | — |
 | **Unit 3** — .txt file handling | ✅ | `BackupCodesActivity.saveLauncher`, `onSaveLocationChosen`; `io/FileExporter.writeText`, `formatBackupCodes` | Backup codes → Generate → Save as .txt | Uses the Storage Access Framework (no storage permission) |
 | **Unit 3** — .csv file handling | ✅ | `LoginHistoryActivity.exportTo`, `importFrom`; `io/FileExporter.formatAuditCsv`; `io/Csv`; `io/CsvImporter` | Login history ⋮ → Export CSV / Import CSV | — |
-| **Unit 4** — location tracking with Google Maps | ✅ | `location/LocationHelper.requestCurrentLocation`; `LoginMapActivity.onMapReady`, `drawMarkers`; `ui/MapMarkers` | Login history ⋮ → Login map (needs `MAPS_API_KEY` to show tiles) | Without a key the map is blank but markers logic still runs |
-| **Unit 5** — Flutter | ❌ (by design) | — | — | Dropped on purpose: the project rule is Java + XML only (no Flutter, Dart, Kotlin or Compose) |
+| **Unit 4** — location tracking with Google Maps | ✅ | `location/LocationHelper.requestCurrentLocation`; `LoginMapActivity.onMapReady`, `drawMarkers`; `ui/MapMarkers` | Login history ⋮ → Login map (needs `MAPS_API_KEY` to show tiles) | Without a key the map is blank but the marker logic still runs |
+| **Unit 5** — Flutter | ❌ (by design) | — | — | Dropped on purpose: the project rule is Java + XML only (no Flutter, Dart, Kotlin or Compose); `ProjectRulesTest.thereIsNoKotlinDartOrComposeCode` enforces it |
 | **Unit 6** — SQLite | ✅ | `data/DbHelper`, six DAOs, `LockoutManager`, `SessionManager` | Any screen; history list; trusted devices | — |
-| **Unit 6** — Firebase | ❌ (by design) | — | — | Dropped on purpose: offline-only app, "SQLite only, no network backend" |
+| **Unit 6** — Firebase | ❌ (by design) | — | — | Dropped on purpose: offline-only app, "SQLite only, no network backend" (the single network use is the Help screen's RFC page) |
 | **Unit 7** — client–server | ❌ (by design) | — | — | There is no server; everything runs on the phone |
-| **Unit 7** — publishing | 🟡 | `app/build.gradle.kts` (`applicationId`, `versionCode`, `versionName`), `AndroidManifest.xml`, Material 3 theme | — | Phase 15 not done: no signed release/AAB, R8 shrinking is off, no privacy policy file, launcher icon is the template, no `FLAG_SECURE` |
+| **Unit 7** — publishing | 🟡 | `app/build.gradle.kts` (R8 on, `isShrinkResources`, optional signing, `versionCode`, `versionName`); adaptive shield-and-key icon; `FLAG_SECURE`; backup off; `docs/RELEASE.md`, `docs/privacy-policy.md`, `docs/play-data-safety.md` | `./gradlew bundleRelease` | **Not done:** an actual signed upload (needs the team's own key) and restricting the Maps key to the release certificate |
 
 ### 6.2 Labs
 
 | Lab | Status | Where implemented (file + method) | Where to demonstrate | Reason / note |
 |---|---|---|---|---|
 | **Lab 1** — installation | ✅ | Gradle project, `README.md` build steps | Open in Android Studio, run on the emulator | — |
-| **Lab 2** — calculator-style UI | 🟡 | The same building blocks (buttons, text inputs, layouts) in `activity_login.xml`, `activity_register.xml`, `activity_totp_verify.xml` | Login/Register/TOTP screens | There is **no calculator screen**: it is not a feature of this project. The layout and control skills are shown by the forms instead |
-| **Lab 3** — explicit + implicit Intents | ✅ | Explicit: `SplashActivity.onCreate`, `LoginActivity.onCheckFinished` (extra `user_id`). Implicit: `EnrollActivity.shareQrImage` and `BackupCodesActivity.shareCodes` (`ACTION_SEND` + chooser); `BiometricGateActivity.openEnrollmentSettings` (`Settings.ACTION_BIOMETRIC_ENROLL`); file pickers (`CreateDocument`, `OpenDocument`) | Long-press QR → Share; Backup codes → Share | — |
+| **Lab 2** — calculator-style UI | 🟡 | The same building blocks (buttons, text inputs, layouts) in `activity_login.xml`, `activity_register.xml`, `activity_totp_verify.xml`, `activity_settings.xml` | Login/Register/TOTP/Settings screens | There is **no calculator screen**: it is not a feature of this project. The layout and control skills are shown by the forms instead |
+| **Lab 3** — explicit + implicit Intents | ✅ | Explicit: `SplashActivity.onCreate`, `LoginActivity.onCheckFinished` (extra `user_id`). Implicit: `EnrollActivity.shareQrImage` and `BackupCodesActivity.shareCodes` (`ACTION_SEND` + chooser); `ProfileActivity.launchCamera` (`ACTION_IMAGE_CAPTURE`); `BiometricGateActivity.openEnrollmentSettings` (`Settings.ACTION_BIOMETRIC_ENROLL`); file pickers (`CreateDocument`, `OpenDocument`, `PickVisualMedia`) | Long-press QR → Share; Backup codes → Share; Profile → Take photo | — |
 | **Lab 4** — ListView with SimpleAdapter | ✅ | `LoginHistoryActivity.showRows`; `TrustedDevicesActivity.showDevices` (+ `ViewBinder`) | Login history; Trusted devices | — |
-| **Lab 5** — WebView | ❌ | — | — | Help screen (Phase 14) not built; no `assets/help.html`, no `INTERNET` permission |
-| **Lab 6** — date / time pickers | 🟡 | Date: `LoginHistoryActivity.showFromPicker`, `showToPicker` | Login history → Filter by date | The **time picker** (auto-lock duration in Settings, Phase 14) is not built |
-| **Lab 7** — database CRUD | ✅ | Create: `UserDao.insert`, `AuditLogDao.insertAll`. Read: `AuditLogDao.listForUserBetween`. Update: `TrustedDeviceDao.update` (rename, revoke), `BackupCodeDao.markUsed`. Delete: `SessionDao.delete` (logout), `replaceForUser` (replace old rows) | Register; Login history; Trusted devices → Rename/Revoke | The app has no "delete account" screen; `delete` DAO methods exist and are tested |
+| **Lab 5** — WebView | ✅ | `HelpActivity.onCreate`, `PageClient`, `ProgressClient`; `assets/help.html`; `HelpPages.isAllowed` | Dashboard ⋮ → Help (both buttons; try Back) | The RFC page needs internet; the local page works offline |
+| **Lab 6** — date / time pickers | ✅ | Date: `LoginHistoryActivity.showFromPicker`, `showToPicker`. Time: `SettingsActivity.showAutoLockPicker`, `onAutoLockPicked` (`TimePickerDialog`) | Login history → Filter by date; Settings → Auto-lock → Change | The time picker is used as hours : minutes (0:01–0:30) |
+| **Lab 7** — database CRUD | ✅ | Create: `UserDao.insert`, `AuditLogDao.insertAll`. Read: `AuditLogDao.listForUserBetween`. Update: `TrustedDeviceDao.update` (rename, revoke), `UserDao.setAvatarUri`, `BackupCodeDao.markUsed`. Delete: `SessionDao.delete` (logout), `replaceForUser` (replace old rows) | Register; Login history; Trusted devices → Rename/Revoke; Profile | The app has no "delete account" screen; `delete` DAO methods exist and are tested |
 | **Lab 8** — Google Map | ✅ | `LoginMapActivity`, `MapMarkers` | Login history → Login map | Needs the Maps API key for tiles |
-| **Lab 9** — camera via implicit Intent | ❌ | — | — | Profile screen (Phase 13) not built |
-| **Lab 10** — broadcast receiver | ❌ | — | — | `receiver/` package is empty (Phase 14); only time-based auto-lock exists |
+| **Lab 9** — camera via implicit Intent | ✅ | `ProfileActivity.startCamera`, `launchCamera`, `onPhotoTaken` (`ActivityResultContracts.TakePicture` → `ACTION_IMAGE_CAPTURE`, `FileProvider`) | Dashboard ⋮ → Profile → Change photo → Take photo | The gallery path (`PickVisualMedia`) is also available |
+| **Lab 10** — broadcast receiver | ✅ | `receiver/AirplaneModeReceiver`, `receiver/ScreenOffReceiver`; `BaseActivity.registerReceivers`, `handleAirplaneModeOn`, `handleScreenOff` | Switch airplane mode on (a bar appears); turn the screen off while logged in (the app locks) | Covered by `ReceiverFlowTest`; the plan notes that a real screen-off was not tried by hand on the emulator (it had a PIN the author did not have), while a real airplane-mode broadcast was |
 
 ### 6.3 Course outcomes (CO1–CO4)
 
-The official CO wording is in the course syllabus, which is not in the repository. The CO numbers below follow how `SECUREAUTH_PLAN.md` tags each phase.
+The official CO wording is in the course syllabus, which is not in the repository. The CO numbers below follow how `SECUREAUTH_PLAN.md` tags each phase (the plan itself says: only the CO numbers are used).
 
 | CO | What the plan ties to it | Evidence in the app | Status |
 |---|---|---|---|
-| **CO1** | Unit 2 basics: simple controls, check boxes, toasts, dialogs, multiscreen, menus, graphics, touch (Phases 5, 7) | Register, Login, TOTP verify, Dashboard, `CountdownRingView` | ✅ (spinner missing) |
-| **CO2** | Unit 3: images, .txt / .csv files, radio buttons, implicit Intents, camera (Phases 6, 9, 10, 13) | Enroll QR + share, Backup codes (.txt, share, radio buttons), Login history (CSV) | 🟡 (camera / profile photo missing) |
+| **CO1** | Unit 2 basics: simple controls, check boxes, toasts, dialogs, multiscreen, menus, graphics, touch, spinner (Phases 5, 7, 14) | Register, Login, TOTP verify, Dashboard, `CountdownRingView`, Settings | ✅ |
+| **CO2** | Unit 3: images, .txt / .csv files, radio buttons, implicit Intents, camera, WebView, receivers (Phases 6, 9, 10, 13, 14) | Enroll QR + share, Backup codes (.txt, share, radio buttons), Login history (CSV), Profile (camera/gallery), Help, receivers | ✅ |
 | **CO3** | Unit 6 SQLite and Lab 7 CRUD; Unit 4 and Lab 8 Maps (Phases 2, 11) | `data/*`, `LocationHelper`, `LoginMapActivity` | ✅ |
-| **CO4** | Unit 7 publishing, polish and demo (Phases 15, 16) | Material 3 theme, tests, docs | 🟡 (release build, signing, privacy policy, demo script not done) |
+| **CO4** | Unit 7 publishing, polish, security review and demo (Phases 15, 16) | Material 3 theme, R8 release build, `FLAG_SECURE`, tests, `docs/SECURITY_REVIEW.md`, `docs/DEMO_SCRIPT.md`, `docs/VIVA.md` | 🟡 (the signed upload to Play is not done) |
 
 ### 6.4 Everything that is not covered, with the reason
 
 | Missing item | Reason |
 |---|---|
-| Spinner (Unit 2) | Settings screen not built (Phase 14 not started) |
-| Time picker (Lab 6, second half) | Same: auto-lock time picker lives in Settings |
-| WebView (Lab 5) | Help screen not built (Phase 14) |
-| Camera + gallery, stored image (Lab 9, Unit 3 photo) | Profile screen not built (Phase 13) |
-| Broadcast receiver (Lab 10) | Receivers not built (Phase 14) |
-| Calculator (Lab 2) | Not a feature of this project; forms cover the controls |
+| Calculator (Lab 2) | Not a feature of this project; forms and the settings screen cover the controls |
 | Flutter (Unit 5), Firebase (Unit 6), client–server (Unit 7) | Dropped by design: Java + XML, SQLite only, offline |
-| Publishing steps (Unit 7) | Phase 15 not done (signing, R8, privacy policy, icon) |
+| Signed release upload (Unit 7) | Needs the team's own signing key and a Play developer account; `docs/RELEASE.md` explains the steps |
+| Maps tiles on a fresh clone | Needs a `MAPS_API_KEY` in `local.properties` (and, for release, a key restricted to the release certificate) |
+
+Everything else in the brief is implemented.
 
 ---
 
@@ -12329,10 +15165,10 @@ The 40 marks are split as in `SECUREAUTH_PLAN.md`. For each criterion: the evide
 | Evidence | Files |
 |---|---|
 | An authenticator whose **TOTP engine is hand-written** (no OTP/TOTP/Base32 library) and matches Google Authenticator | `crypto/Base32`, `crypto/TotpEngine` |
-| A **three-factor handshake** (password → code → fingerprint) with a lockout shared by all steps | `LoginActivity`, `TotpVerifyActivity`, `BiometricGateActivity`, `LockoutManager` |
+| A **three-factor handshake** (password → code → fingerprint) with a lockout shared by all steps, and an in-memory guard that proves each step happened | `LoginActivity`, `TotpVerifyActivity`, `BiometricGateActivity`, `LockoutManager`, `LoginHandshake` |
 | **Offline-only** and auditable: every step is an `audit_log` row you can filter, export to CSV and import | `AuditLogDao`, `LoginHistoryActivity`, `io/*` |
 | **Suspicious-login detection**: a login more than 100 km from the previous one is flagged and shown on a map | `LocationHelper.distanceKm`, `BiometricGateActivity.completeLogin`, `LoginMapActivity` |
-| User needs: recovery when the phone/authenticator is lost (backup codes), and control of which phones are trusted | `BackupCodesActivity`, `BackupRecoveryActivity`, `TrustedDevicesActivity`, `DeviceTrust` |
+| User needs: recovery when the authenticator is lost (backup codes), control of which phones are trusted, a locked-down app that blocks screenshots and locks when the screen turns off | `BackupCodesActivity`, `BackupRecoveryActivity`, `TrustedDevicesActivity`, `DeviceTrust`, `BaseActivity` (`FLAG_SECURE`, `handleScreenOff`) |
 
 ### 7.2 Self-learning and new concepts — 5 marks
 
@@ -12343,37 +15179,556 @@ The 40 marks are split as in `SECUREAUTH_PLAN.md`. For each criterion: the evide
 | **BiometricPrompt** (AndroidX Biometric) | `BiometricGateActivity`, `BiometricSupport` |
 | **ZXing** QR generation and the `otpauth://` link | `EnrollActivity.loadQrCode`, `TotpEngine.buildOtpAuthUri` |
 | **PBKDF2** salted hashing, constant-time compare | `PasswordHasher` |
-| Also: `ViewModel`, Activity Result API, `FileProvider`, Storage Access Framework, Fused Location, Espresso tests | `EnrollViewModel`, `BackupCodesViewModel`, launchers in several screens, `FileExporter`, `LocationHelper`, `androidTest` |
+| Also: `ViewModel`, Activity Result API (`TakePicture`, `PickVisualMedia`), `FileProvider`, Storage Access Framework, Fused Location, EXIF handling, `FLAG_SECURE`, R8, Espresso tests | `EnrollViewModel`, `BackupCodesViewModel`, `ProfileActivity`, `AvatarStore`, `FileExporter`, `LocationHelper`, `BaseActivity`, `app/build.gradle.kts`, `androidTest` |
 
 ### 7.3 Standardized workable app (Play Store + Material Design) — 10 marks
 
 | Evidence | Files | Gap |
 |---|---|---|
 | Material 3 DayNight theme, navy/teal palette, text appearances, dark mode | `themes.xml`, `colors.xml`, `values-night/colors.xml` | — |
-| Material Components on every screen (`TextInputLayout`, `MaterialButton`, `MaterialToolbar`, `Chip`, `MaterialAlertDialogBuilder`) | layouts, `BaseActivity` | — |
-| All user text in `strings.xml`; accessibility descriptions on icons, QR and ring | `strings.xml`, `LoginHistoryActivity.showRows` (`ViewBinder`), `DashboardActivity.updateCode` | Some content descriptions are left for Phase 15 review |
-| Edge-to-edge and keyboard-aware padding; rotation-safe screens | `BaseActivity.applySystemBarPadding`, `EnrollViewModel`, `BackupCodesViewModel`, `configChanges` | — |
-| A large automatic test suite (about 120 unit and 207 device tests) | `src/test`, `src/androidTest` | — |
-| **Release readiness (Play Store)** | `app/build.gradle.kts`, manifest | **Not done:** signed AAB, R8, privacy policy, final adaptive icon, `FLAG_SECURE`, backup rules (Phase 15) |
+| Material Components on every screen (`TextInputLayout`, `MaterialButton`, `MaterialToolbar`, `Chip`, `ShapeableImageView`, `LinearProgressIndicator`, `MaterialAlertDialogBuilder`, `Snackbar`) | layouts, `BaseActivity` | — |
+| All user text in `strings.xml` (217 strings, plurals where a count can be 1); accessibility descriptions on icons, QR, ring and avatar | `strings.xml`, `LoginHistoryActivity.showRows`, `DashboardActivity.updateCode`, `ProfileActivity.showProfile` | — |
+| Edge-to-edge and keyboard-aware padding; rotation-safe screens | `BaseActivity.applySystemBarPadding`, the two ViewModels, `configChanges` | — |
+| Final shield-and-key adaptive icon with a themed layer | `drawable/ic_launcher_*`, `mipmap-anydpi` | — |
+| Release build: R8 + resource shrinking, `FLAG_SECURE`, backup off, privacy policy and data-safety draft, Lint 0 errors | `app/build.gradle.kts`, `docs/*` | **Not done:** the signed upload to Play and the release-restricted Maps key |
+| A large automatic test suite (179 unit and 291 device tests) | `src/test`, `src/androidTest` | — |
 
 ### 7.4 Individual contribution — 10 marks
 
-Evidence is the **commit history** (one local commit per phase credited to its owner with `--author`) and `docs/CONTRIBUTIONS.md` (date, phase, owner, what was built, problem, solution, who helped). At the time of writing the repository has **no commits yet** (all files are untracked), so the commits that carry this evidence still have to be made; and `docs/CONTRIBUTIONS.md` has rows for Phases 0–11 but none for Phase 12 yet. The ownership used by the plan:
+Evidence is the **commit history** (one local commit per phase credited to its owner with `--author`) and `docs/CONTRIBUTIONS.md` (date, phase, owner, what was built, problem, solution, who helped). `docs/CONTRIBUTIONS.md` has a row for every phase 0–16. At the time of writing the repository has **a single commit** ("phases 0-12 baseline"); Phases 13–16 are still uncommitted, so the per-phase commits that carry this evidence have to be made. The ownership used by the plan (Phase 14 was shared; Phases 15–16 were "all"):
 
 | Member | Phases (from the plan) | Main files |
 |---|---|---|
-| A | 0, 3, 4, 5, 7, part of 14 | `crypto/*`, `RegisterActivity`, `LoginActivity`, `TotpVerifyActivity`, `DashboardActivity`, `CountdownRingView`, `LockoutManager` |
-| B | 6, 9, part of 10 (CSV), 13, part of 14 | `EnrollActivity`, `BackupCodesActivity`, `BackupRecoveryActivity`, `io/*` |
-| C | 1, 2, 8, 10 (history, filter), 11, 12, part of 14 | `data/*` (DbHelper, DAOs), `BiometricGateActivity`, `SessionManager`, `LoginHistoryActivity`, `LocationHelper`, `LoginMapActivity`, `TrustedDevicesActivity` |
+| A | 0, 3, 4, 5, 7, part of 14 (Settings) | `crypto/*`, `RegisterActivity`, `LoginActivity`, `TotpVerifyActivity`, `DashboardActivity`, `CountdownRingView`, `LockoutManager`, `SettingsActivity`, `AppSettings` |
+| B | 6, 9, part of 10 (CSV), 13, part of 14 (Help) | `EnrollActivity`, `BackupCodesActivity`, `BackupRecoveryActivity`, `io/*`, `ProfileActivity`, `HelpActivity` |
+| C | 1, 2, 8, 10 (history, filter), 11, 12, part of 14 (receivers) | `data/*` (DbHelper, DAOs), `BiometricGateActivity`, `SessionManager`, `LoginHistoryActivity`, `LocationHelper`, `LoginMapActivity`, `TrustedDevicesActivity`, `receiver/*` |
 
-*(Section 9 re-groups the same files by the team roles asked for in this guide: A = crypto and security, B = data / files / maps / receivers / release, C = UI and lab screens.)*
+*(Section 9 re-groups the same files by the team roles asked for in this guide: A = crypto and security, B = data / files / maps / receivers / release config, C = UI and lab screens.)*
 
 ### 7.5 Viva and demo — 10 marks
 
 | Evidence | Where |
 |---|---|
 | `docs/VIVA_NOTES.md`: 5 plain-language bullets and 3 examiner questions per phase | `docs/VIVA_NOTES.md` |
+| `docs/VIVA.md`: 5 likely examiner questions for each of 16 modules, with the course topic and CO | `docs/VIVA.md` |
+| `docs/DEMO_SCRIPT.md`: the 5-minute demo, minute by minute, with preparation and fixes | `docs/DEMO_SCRIPT.md` |
 | This guide: every method explained, 3 viva questions per component, a glossary | `docs/CODEBASE_GUIDE.md` |
-| Demo path that touches every implemented feature | Section 5 workflows; plan Section 11 checklist (register → enroll → scan with Google Authenticator → logout → full login → history + filter → CSV → map → backup-code recovery) |
-| Tests that prove the claims live | `./gradlew test`, `./gradlew connectedAndroidTest` |
-| **Still to produce** | `docs/VIVA.md` and the 5-minute demo script (Phase 16); the airplane-mode toast, screen-off lock, profile photo, settings and help parts of the demo are not available yet |
+| Demo path that touches every feature | Section 5 workflows; plan Section 11 checklist (register → enroll → scan with Google Authenticator → logout → full login → history + filter → CSV → map → backup-code recovery → airplane-mode bar → screen-off lock → Help, Settings, Profile photo) |
+| Tests that prove the claims live | `./gradlew test`, `./gradlew connectedDebugAndroidTest` |
+| **Still to do by hand** | Rehearse the demo on the demo phone (fingerprint enrolled, location on, automatic date and time); every member must be able to explain their own files (Section 9) |
+
+---
+
+## 8. Security design
+
+*Phase 16 reviewed the whole code base against the plan's hard rules and the handshake; the full review is `docs/SECURITY_REVIEW.md`. This section explains what is protected and how, with the real code, and lists the limits that remain.*
+
+### 8.1 What is protected, and how
+
+| Asset | Threat | Protection | Where (file → method) |
+|---|---|---|---|
+| **Passwords** | Stolen database; guessing; rainbow tables | Never stored. Only **PBKDF2-HMAC-SHA256**, 120,000 iterations, 256-bit output, with a **random 16-byte salt** per password (`SecureRandom`). The `char[]` is overwritten after use | `PasswordHasher` → `hash`, `verify`, `derive` |
+| **Backup codes** | Stolen database; reuse | Same salted PBKDF2 hash, **its own salt per code**; shown to the user once; spent with an atomic `UPDATE ... WHERE used = 0` | `BackupCodeGenerator` → `generate`, `matches`; `BackupCodeDao` → `markUsed`, `replaceForUser` |
+| **TOTP secret** | Stolen database or backup file | Created from `SecureRandom`; stored only as **AES-256-GCM ciphertext + IV** under a key that lives in the **Android Keystore**; decrypted only for the moment it is needed and wiped (`Arrays.fill`) | `TotpEngine.generateSecret`; `KeystoreHelper` → `encrypt`, `decrypt`; `TotpVerifyActivity.checkCode`; `DashboardActivity.wipeSecret` |
+| **Tamper detection** | Changed ciphertext or IV | GCM's authentication tag makes `decrypt` throw instead of returning garbage; the screens show "Could not read your stored secret" | `KeystoreHelper.decrypt`; `TotpVerifyActivity` (`SECRET_ERROR`), `DashboardActivity.onDataLoaded` |
+| **Session** | Using protected screens without logging in; stolen database | 32-byte random token kept **only in memory**; the database holds just its **SHA-256 hash**; every protected screen re-checks token, expiry and the row; auto-lock after 5 minutes (1–30 allowed, set in Settings) **and at once when the screen turns off** | `SessionManager` → `create`, `check`, `isActive`; `BaseActivity` → `enforceSession`, `endSession`, `handleScreenOff`; `SessionDao.findValid` |
+| **The handshake itself** | Skipping a step; a forged `userId` Intent extra | Only `BiometricGateActivity.completeLogin` creates a session (a test checks this); protected screens take the user from the session, never from an Intent extra; every Activity except Splash has `exported="false"`; the code, recovery, fingerprint and Enroll screens also ask the in-memory **`LoginHandshake`** that the earlier steps really passed (same user, within 10 minutes) | `BiometricGateActivity`; `DashboardActivity.onCreate`; `LoginHandshake`; `AndroidManifest.xml`; `HandshakeGuardTest` |
+| **Brute force** | Guessing password, code, backup code or fingerprint | **3 failures in a row → 5-minute lock**, one shared counter for all four steps, stored in `users` (survives closing the app); the lock is checked **before** the password is verified; the counter is reset only after the final step | `LockoutManager`; `LoginActivity.checkPassword`; `TotpVerifyActivity.checkCode`; `BackupRecoveryActivity.checkCode`; `BiometricGateActivity.handleFailedAttempt`, `completeLogin` |
+| **User enumeration / timing** | Learning which usernames exist | Same message for unknown user and wrong password; a **dummy hash** is verified for unknown users to spend the same time | `LoginActivity.checkPassword` (`DUMMY_HASH`, `DUMMY_SALT`) |
+| **Timing of comparisons** | Learning how many characters were right | **Constant-time comparison** (`MessageDigest.isEqual`); TOTP verification checks all three windows with no early exit | `PasswordHasher.verify`; `TotpEngine.verify` |
+| **SQL injection** | Malicious text in fields | Only `?` placeholders and `ContentValues`; no string-concatenated values | all DAOs; test `UserDaoTest.sqlInjectionTextIsStoredAsPlainValue` |
+| **CSV injection and bad files** | Spreadsheet formulas, huge or malformed imports | Export prefixes `=`, `+`, `-`, `@` text with an apostrophe; import limits size (2 MB) and rows (50,000), validates header, time, event/result pattern, coordinate ranges, forces the row to the logged-in user, skips duplicates | `Csv.neutralizeFormula`; `FileExporter.formatAuditCsv`; `CsvImporter` |
+| **Secrets in logs** | Reading logcat | The app contains **no logging calls at all** (no `Log.*`, no `System.out`, no `printStackTrace`); a unit test fails if one is added | whole code base; `ProjectRulesTest.nothingIsLoggedOrPrinted` |
+| **Screenshots and the recent-apps preview** | A code, QR, secret or backup code captured by a screenshot, screen recording or the app switcher | **`FLAG_SECURE`** on the Dashboard, Enroll and Backup codes screens, and on the one-time backup-codes dialog (a dialog is its own window) | `BaseActivity.onCreate` + `isSecureScreen` overrides; `BackupCodesActivity.showCodesDialog`; `SecureScreenTest` |
+| **Secrets on the clipboard** | Clipboard preview on Android 13+ | The clip is marked **sensitive** (`EXTRA_IS_SENSITIVE`) so the preview is hidden | `BaseActivity.copyToClipboard` |
+| **QR image (it *is* the secret)** | Image left behind or shared by accident | Warning dialog before sharing; saved in the private cache only; `FileProvider` limited to `cache/qr/` and `cache/camera/`; file deleted when the screen finishes | `EnrollActivity.confirmShareQr`, `writeQrToCache`, `onDestroy`; `res/xml/file_paths.xml` |
+| **Backups** | Copies of the database in cloud backup or a device transfer | `allowBackup="false"` and both rule files exclude everything (the Keystore key would not move anyway) | `AndroidManifest.xml`; `backup_rules.xml`; `data_extraction_rules.xml`; `ReleaseHygieneTest.androidBackupIsSwitchedOff` |
+| **Location privacy** | Tracking | Optional; asked once with an explanation; can be switched off in Settings; stored only on the phone | `BaseActivity.ensureLocationPermission`; `LocationHelper`; `SettingsActivity` |
+| **The network** | Data leaving the phone | The only network use is the Help screen's RFC page; the `INTERNET` permission exists for that alone; the `WebView` has JavaScript, file and content access **off** and opens only `file:///android_asset/` and `https://datatracker.ietf.org/` pages | `HelpActivity.onCreate`, `HelpPages.isAllowed`; `HelpPagesTest`; `HelpFlowTest` |
+| **Profile photo** | A tampered path in the database making the app read another file; huge images | Photos are copied into a private folder, shrunk (≤ 512 px) and read back only if the canonical path is inside that folder; the camera writes through a `FileProvider` limited to `cache/camera/` | `AvatarStore.isInside`, `load`, `saveFrom`; `file_paths.xml` |
+| **Receivers** | Another app sending a fake "screen off" or "airplane" broadcast | Registered in code with `RECEIVER_NOT_EXPORTED`, only while a screen is visible | `BaseActivity.registerReceivers` |
+| **Keys and API keys in Git** | Leaking the Maps key or the release signing key | Both come from git-ignored files (`local.properties`, `keystore.properties`); tests check that no key sits in the source or inside the project folders | `app/build.gradle.kts`; `.gitignore`; `ReleaseHygieneTest` |
+| **Release build** | Easy reading of the shipped code | R8 shrinks and renames code, the resource shrinker removes unused resources | `app/build.gradle.kts` (`optimization`, `isShrinkResources`) |
+
+### 8.2 The key pieces of code
+
+Constant-time comparison in the password check (the stored hash and the freshly computed one):
+
+```java
+byte[] expected = Base64.getDecoder().decode(storedHash);
+byte[] actual = derive(password, salt);
+// Constant-time comparison: takes the same time wherever the first difference is
+return MessageDigest.isEqual(expected, actual);
+```
+
+
+TOTP verification: three windows, no early exit, constant-time comparison:
+
+```java
+boolean match = false;
+for (int step = -1; step <= 1; step++) {
+    long time = nowMillis + (long) step * periodSeconds * 1000L;
+    if (time < 0) {
+        continue; // before 1970: no such time step
+    }
+    byte[] expected = generate(secret, time, digits, periodSeconds, algo)
+            .getBytes(StandardCharsets.UTF_8);
+    // Constant-time compare, and no early exit, so timing does not reveal
+    // how many digits were right or which window matched
+    match |= MessageDigest.isEqual(expected, given);
+}
+return match;
+```
+
+
+The Keystore key: only encrypt/decrypt, GCM only, 256 bits. Note what is **absent**: there is no `setUserAuthenticationRequired(true)`, so the key can be used by the app without a fingerprint (see 8.3, item 1):
+
+```java
+generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+        KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+        .setKeySize(256)
+        .build());
+```
+
+
+The session token is never stored raw:
+
+```java
+String rawToken = generateToken();
+Session row = new Session();
+row.userId = forUserId;
+row.tokenHash = hashToken(rawToken);
+row.createdAt = now;
+row.expiresAt = now + durationMs;
+```
+
+
+The lock is checked before the password is even verified:
+
+```java
+lockout.clearExpiredLock(user, now);
+long remaining = lockout.remainingLockMs(user, now);
+if (remaining > 0) {
+    // Locked: do not even look at the password, so guessing during a lock gets nowhere
+    Arrays.fill(password, '\0');
+    return new Outcome(Status.LOCKED, user.id, remaining);
+```
+
+
+A step proves the earlier steps (here, the fingerprint step refusing to open without the code step):
+
+```java
+// Steps 1 and 2 must really have passed; an Intent saying so is not proof
+if (!LoginHandshake.getInstance().allowsBiometricStep(userId, System.currentTimeMillis())) {
+    goToLogin();
+    return;
+}
+
+binding = ActivityBiometricGateBinding.inflate(getLayoutInflater());
+```
+
+
+The handshake's rule: right stage, same user, valid id, clock not going backwards, not older than 10 minutes:
+
+**Signature:** `private boolean is(Stage wanted, long forUserId, long now)`
+
+- **What it does:** See [4.18](#418-login-handshake-guard).
+- **Inputs → output:** stage, user id, time → `boolean`.
+- **Called by:** the `allows...` methods and `codeAccepted`.
+- **Calls next:** nothing.
+
+```java
+private boolean is(Stage wanted, long forUserId, long now) {
+    return stage == wanted
+            && forUserId >= 0
+            && userId == forUserId
+            && now >= since
+            && now - since <= MAX_AGE_MS;
+}
+```
+
+
+`FLAG_SECURE` on screens that show a code or a secret, and the dialog window:
+
+**Signature:** `protected void onCreate(@Nullable Bundle savedInstanceState)`
+
+- **What it does:** Sets `FLAG_SECURE` on the window when the screen says it is secure (see [4.3](#43-ui-foundation-and-splash)).
+- **Inputs → output:** saved state → nothing.
+- **Called by:** Android.
+- **Calls next:** `isSecureScreen`, `Window.setFlags`.
+
+```java
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    // Draw behind the status/navigation bars (this is the default look on Android 15+)
+    EdgeToEdge.enable(this);
+    if (isSecureScreen()) {
+        // Blocks screenshots and screen recording of this window, and blanks its preview in
+        // the recent-apps list, so a code or secret cannot leak that way
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+    }
+}
+```
+
+```java
+// A dialog is its own window, so the Activity's FLAG_SECURE does not cover it
+codesDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+        WindowManager.LayoutParams.FLAG_SECURE);
+```
+
+
+The Help screen's allow-list:
+
+**Signature:** `static boolean isAllowed(String url)`
+
+- **What it does:** See [4.14](#414-help-webview).
+- **Inputs → output:** address → `boolean`.
+- **Called by:** `HelpActivity.PageClient.shouldOverrideUrlLoading`.
+- **Calls next:** `String.startsWith`.
+
+```java
+/**
+ * True for our own asset pages and for pages on datatracker.ietf.org over https. The trailing
+ * slash in the prefix matters: "https://datatracker.ietf.org.evil.example/" must not pass.
+ */
+static boolean isAllowed(String url) {
+    return url != null && (url.startsWith(ASSET_PREFIX) || url.startsWith(RFC_HOST_PREFIX));
+}
+```
+
+
+### 8.3 Known limitations (be honest about these in the viva)
+
+These match the "known limits" of `docs/SECURITY_REVIEW.md`, plus the ones found while reading the code for this guide.
+
+1. **The fingerprint is a gate in the app's logic, not part of the cryptography.** The Keystore key has no "user authentication required" setting, and `BiometricPrompt` is used without a `CryptoObject`. So a person who controls the app process (a rooted phone, instrumentation) can ask the Keystore to decrypt without a fingerprint, and the Dashboard decrypts the secret as soon as a valid session exists.
+2. **A TOTP code can be used again inside its time window** (up to about 90 seconds with the ±1 step). RFC 6238 says a server should refuse a repeat; that needs a stored "last accepted step", and it would make "enroll, then log in straight away" fail because both use the same code.
+3. **"Set up authenticator again" (Settings) needs only the live session**, not a fresh code. The session already needed all three steps and ends in 5 minutes or when the screen turns off.
+4. **First-time enrollment is protected by the password alone.** There is no e-mail or phone to prove identity, so an account that registered but never enrolled can be finished by whoever knows the password.
+5. **Imported CSV rows can influence the 100 km check and fake history.** `findLastWithLocation(userId, SESSION_START)` reads any `SESSION_START` row with a place, including imported ones; and the audit log is an ordinary table (it is a record for the user, not a legal-grade log).
+6. **The session length is counted from login**, not from the last touch (this matches "auto-lock after N minutes" in the plan).
+7. **Exports are the user's own files.** "Share QR image", "Save as .txt" and "Export CSV" put secrets or history in files the user chooses (each with a warning).
+8. **Rooted or compromised device.** All protections assume the OS is honest. Wiping `char[]` and `byte[]` is best-effort (the JVM may have copied them), and a memory dump while the Dashboard is open exposes the secret. `FLAG_SECURE` does not stop someone photographing the screen with another camera.
+9. **Lockout can be used against the owner.** Anyone who knows a username can lock that account for 5 minutes by typing three wrong passwords; and while an account is locked the dialog reveals that the username exists.
+10. **The code depends on the phone's clock.** A wrong date or time gives wrong codes; there is no network time check.
+11. **Revoking other phones is symbolic.** The database is local; only revoking *this* phone changes behaviour (a backup code at every login). A revoked phone cannot be un-revoked from the UI, and it uses up one backup code per login.
+12. **Clipboard.** A copied code or secret stays on the clipboard until replaced; there is no automatic clearing.
+13. **Backup-code strength.** A code has 40 bits of randomness; acceptable only because attempts are limited by the lockout and every guess costs a PBKDF2 run.
+14. **Default algorithm is HMAC-SHA-1.** It is what Google Authenticator expects and is fine for HOTP/TOTP; SHA-256 and 8 digits can be chosen in Settings but may not work in other authenticator apps.
+15. **The release is signed only if you provide a key.** Without `keystore.properties` the bundle is unsigned; the Maps key still has to be restricted to the release certificate in Google Cloud (`docs/RELEASE.md`). R8 renames code but is not a security boundary.
+16. **`LoginHandshake` is in memory, for one user at a time.** A second user's password step replaces the first user's progress; that is safe (it only makes a step fail), but two logins cannot be in progress at once.
+
+---
+
+## 9. Team guide
+
+### 9.1 Roles at a glance
+
+The three roles below use the placeholder names **Member A**, **Member B** and **Member C** (replace them with real names). They group the files by *skill needed*, so that the strongest members hold the hardest code and the beginner holds screens that map directly to lab topics. *(The plan's phase-by-phase ownership in `SECUREAUTH_PLAN.md` and `docs/CONTRIBUTIONS.md` is slightly different; keep using that for the commit credits in rubric 4, and use this section for the viva preparation.)*
+
+| Role | Strength | Owns (in short) | Sections to master |
+|---|---|---|---|
+| **Member A** | Strong | Crypto and security: TOTP engine, hashing, Keystore, lockout, sessions, the three-step handshake and its guard, `FLAG_SECURE` | 4.1, 4.4, 4.5 (secret part), 4.6 (TOTP part), 4.7, 4.18, 5.1–5.4, 8 |
+| **Member B** | Strong | Data, files, maps, receivers, release config: SQLite layer, CSV/txt files, profile-photo storage, settings storage, location and maps, backup codes, broadcast receivers, Gradle/manifest/release | 3, 4.2, 4.8, 4.9 (io part), 4.10, 4.12 (`AvatarStore`), 4.13 (`AppSettings`), 4.15, 4.16, 5.5–5.7, 5.10, 5.12 |
+| **Member C** | Beginner | UI and lab-style screens: Splash, Dashboard UI, login history list and date filter, trusted devices, profile/camera screen, settings screen, help WebView, UI polish and the icon | 4.3, 4.6 (UI part), 4.9 (UI part), 4.11, 4.12 (`ProfileActivity`), 4.13 (`SettingsActivity`), 4.14, 5.3, 5.7, 5.8, 5.9, 5.13, 5.14 |
+
+### 9.2 Member A — crypto and security files
+
+**Files**
+
+| Area | Files |
+|---|---|
+| Crypto engine | `crypto/Base32.java`, `crypto/TotpEngine.java`, `crypto/PasswordHasher.java`, `crypto/KeystoreHelper.java`, `crypto/BackupCodeGenerator.java` |
+| Rules | `data/LockoutManager.java`, `data/SessionManager.java`, `data/LoginHandshake.java` |
+| Handshake screens | `ui/RegisterActivity.java`, `ui/LoginActivity.java`, `ui/InputRules.java`, `ui/TotpVerifyActivity.java`, `ui/BiometricGateActivity.java`, `ui/BiometricSupport.java` |
+| Secret handling on screens | `ui/EnrollActivity.java` + `EnrollViewModel.java` (generate, verify, encrypt, save), `DashboardActivity` methods `loadData`, `onDataLoaded`, `updateCode`, `wipeSecret`, `tick` |
+| Session guard and screen protection | `BaseActivity.enforceSession`, `endSession`, `handleScreenOff`, `onCreate` (`FLAG_SECURE`), `isSecureScreen` overrides |
+| Tests | `crypto/*Test`, `data/SessionTokenTest`, `LoginHandshakeTest`, `LockoutManagerTest`, `SessionManagerTest`, `KeystoreHelperTest`, `AuthFlowTest`, `TotpVerifyFlowTest`, `BiometricGateFlowTest`, `HandshakeGuardTest`, `SecureScreenTest`, `ProjectRulesTest` |
+
+**What you must be able to explain**
+
+- [ ] The idea of TOTP: shared secret + clock → step number → HMAC → 6 digits; why the code is the same on the phone and in Google Authenticator.
+- [ ] The 8 steps in `TotpEngine.generate`, with the worked example (`287082` at time 59 s) from [4.1](#41-crypto-engine); what the ±1 window is and why `verify` loops without an early exit.
+- [ ] Base32: why 5 bits per symbol, how `encode` and `decode` use the bit bucket, what the padding rule is.
+- [ ] Why the password is hashed with PBKDF2 (iterations, salt) and not SHA-256; what the constant-time compare protects.
+- [ ] The Android Keystore: what AES-GCM is, what the IV and the tag do, why the key never leaves the Keystore, and what happens to a tampered ciphertext.
+- [ ] How backup codes are made, hashed, checked and why `markUsed` is atomic.
+- [ ] The whole handshake and exactly where each step can fail ([5.2](#52-the-full-login-handshake)); the shared 3-strike lockout and why the counter is reset only at the end ([5.4](#54-lockout-after-3-failed-attempts)).
+- [ ] `LoginHandshake`: what each stage means, who writes and who reads it, why it expires and why it is only a *second* lock ([4.18](#418-login-handshake-guard)).
+- [ ] How a session is created, checked and ended; why the database stores only a hash; the two kinds of auto-lock — by time and when the screen turns off ([5.10](#510-auto-lock-session-expiry-and-screen-off)).
+- [ ] `FLAG_SECURE`: which screens use it, why a dialog needs its own flag.
+- [ ] The limitations in [8.3](#83-known-limitations-be-honest-about-these-in-the-viva), especially the biometric gate not being bound to the key and TOTP reuse inside the window.
+
+### 9.3 Member B — data, files, maps, receivers, release config
+
+**Files**
+
+| Area | Files |
+|---|---|
+| SQLite layer | `data/DbHelper.java`, six models (`User`, `TotpAccount`, `BackupCode`, `AuditLog`, `TrustedDevice`, `Session`), six DAOs, `AuditEvent.java`, `DeviceTrust.java` (data side) |
+| Settings storage | `data/AppSettings.java` (keys, allowed values, validation on read) |
+| Files | `io/Csv.java`, `io/CsvImporter.java`, `io/FileExporter.java`, `io/AvatarStore.java` |
+| Backup codes | `ui/BackupCodesActivity.java`, `BackupCodesViewModel.java`, `ui/BackupRecoveryActivity.java` |
+| Location and maps | `location/LocationHelper.java`, `ui/LoginMapActivity.java`, `ui/MapMarkers.java`, `BaseActivity.ensureLocationPermission`/`withCurrentLocation` |
+| Receivers | `receiver/AirplaneModeReceiver.java`, `receiver/ScreenOffReceiver.java`, `BaseActivity.registerReceivers`/`unregisterReceivers` |
+| Build and release | `app/build.gradle.kts`, `gradle/libs.versions.toml`, `AndroidManifest.xml`, `res/xml/*`, `app/lint.xml`, `docs/RELEASE.md`, `docs/privacy-policy.md`, `docs/play-data-safety.md` |
+| Tests | `data/*DaoTest`, `RelatedTablesDaoTest`, `AppSettings*Test`, `io/*Test`, `location/*Test`, `BackupCodesFlowTest`, `BackupRecoveryFlowTest`, `LoginMapFlowTest`, `ReceiverFlowTest`, `ReleaseHygieneTest` |
+
+**What you must be able to explain**
+
+- [ ] The six tables and their relationships ([Section 3](#3-database)), foreign keys with `ON DELETE CASCADE`, why `onConfigure` enables them, the index on `audit_log (user_id, ts)`.
+- [ ] The DAO pattern, `ContentValues`, `Cursor`, parameterised queries (`?`) and SQL injection; why `lat`/`lng` use `isNull` before `getDouble`.
+- [ ] Transactions: `replaceForUser` (both), `insertAll`; and the atomic `markUsed` (`WHERE used = 0`).
+- [ ] The Storage Access Framework: `CreateDocument`/`OpenDocument`, why no storage permission is needed, `writeText` with mode `"wt"`.
+- [ ] CSV: quoting rules, the formula-injection guard, every validation in `CsvImporter`, duplicate rule (time + event).
+- [ ] `AvatarStore`: EXIF rotation, centre square, 512 px JPEG, `inSampleSize`, `isInside` ([4.12](#412-profile-camera-and-gallery)).
+- [ ] `AppSettings`: why every getter validates, and which setting applies when ([4.13](#413-settings)).
+- [ ] Backup-code flow end to end ([5.5](#55-backup-code-recovery)), including the ViewModel that keeps the codes across rotation.
+- [ ] Location: the permission flow, `getCurrentLocation` with a timeout, haversine distance, the 100 km rule, and what happens when location is denied ([5.6](#56-audit-logging-location-capture-and-the-suspicious-login-check)).
+- [ ] The map: `SupportMapFragment`, `onMapReady`, markers, `LatLngBounds`; where the Maps key comes from.
+- [ ] Broadcast receivers: what they are, why they are registered in code with `RECEIVER_NOT_EXPORTED`, what the two receivers do ([4.15](#415-broadcast-receivers), [5.10](#510-auto-lock-session-expiry-and-screen-off), [5.12](#512-airplane-mode-reminder)).
+- [ ] Manifest and Gradle: `exported`, the FileProvider, `manifestPlaceholders`, ViewBinding, version catalog, R8, optional signing, backup off; the checklist in [4.16](#416-build-and-release-config) and what is not done.
+
+### 9.4 Reading order for Member C (the beginner)
+
+**Member C — UI and lab-style screens.**
+
+| Area | Files |
+|---|---|
+| Launcher, look and icon | `ui/SplashActivity.java`, `res/layout/activity_splash.xml`, `res/values/themes.xml`, `colors.xml`, `values-night/colors.xml`, `strings.xml`, drawables, the shield-and-key launcher icon |
+| Dashboard UI | `ui/DashboardActivity.java` methods `onCreate`, `setUpTapToCopy`, `showSuspiciousLoginDialog`, `showAvatar`, `onCreateOptionsMenu`, `onOptionsItemSelected`, `logout`; `views/CountdownRingView.java`; `activity_dashboard.xml`, `menu_dashboard.xml` |
+| Login history | `ui/LoginHistoryActivity.java`, `DateRange.java`, `HistoryFormat.java`, `activity_login_history.xml`, `item_history.xml`, `menu_login_history.xml` |
+| Trusted devices | `ui/TrustedDevicesActivity.java`, `activity_trusted_devices.xml`, `item_trusted_device.xml`, `dialog_rename_device.xml`, `context_trusted_device.xml` |
+| Profile (camera/gallery) | `ui/ProfileActivity.java`, `activity_profile.xml`, `ic_avatar_placeholder.xml` |
+| Settings | `ui/SettingsActivity.java`, `activity_settings.xml` |
+| Help (WebView) | `ui/HelpActivity.java`, `ui/HelpPages.java`, `activity_help.xml`, `assets/help.html` |
+| Helpers | `AfterTextChangedListener.java`, the layouts of the forms (`activity_login.xml`, `activity_register.xml`) |
+| Tests | `SplashActivityTest`, `LoginHistoryFlowTest`, `TrustedDevicesFlowTest`, `DashboardFlowTest`, `ProfileFlowTest`, `SettingsFlowTest`, `HelpFlowTest`, `LauncherIconTest`, `CountdownRingViewTest`, `HistoryHelpersTest`, `HelpPagesTest` |
+
+**Suggested reading order — simplest first.** Do not read the whole guide front to back. Follow this path; each step lists *what to look for*.
+
+| # | Read | What to look for | Time |
+|---|---|---|---|
+| 1 | [Section 10 — Glossary](#10-glossary): *Activity, Intent, Adapter, Toast, ViewBinding, Context menu, WebView, Spinner* | Plain-language meaning of the words used everywhere | 15 min |
+| 2 | [1.2 handshake](#12-the-login-handshake-in-one-line) and [1.3 screen map](#13-the-screens-and-how-you-move-between-them) | Which screen opens which | 10 min |
+| 3 | [2.2 layers in plain English](#22-the-layers-in-plain-english) | What a layout file is and what an Activity does | 10 min |
+| 4 | [4.3 UI foundation and Splash](#43-ui-foundation-and-splash) — the "Android in five lines" box, `SplashActivity.onCreate`, `activity_splash.xml`, the theme | The simplest screen in the app: layout + one click listener + one explicit Intent | 30 min |
+| 5 | [4.4 Registration and Login](#44-registration-and-login) — start with the two layouts and `onCreate` | Text fields, a check box, buttons, Toasts, an AlertDialog | 30 min |
+| 6 | [4.13 Settings](#413-settings) — `setUpAuthenticatorSpinners`, `prepare`, `showAutoLockPicker`, the check box | **Spinner**, **TimePickerDialog**, check box, `SharedPreferences` | 40 min |
+| 7 | [4.6](#46-totp-verification-and-dashboard) — `DashboardActivity.setUpTapToCopy`, the menu, then `CountdownRingView` | `OnTouchListener`, options menu, `Canvas` drawing | 40 min |
+| 8 | [4.9 Login history](#49-login-history-and-csv) — `showRows`, `showFromPicker`, `showToPicker`, `item_history.xml` | **Lab 4** (`ListView` + `SimpleAdapter`) and **Lab 6** (`DatePickerDialog`) | 45 min |
+| 9 | [4.11 Trusted devices](#411-trusted-devices) — `showDevices`, `onCreateContextMenu`, `showRenameDialog` | Context menu, dialog with a text box, the same adapter idea | 45 min |
+| 10 | [4.12 Profile](#412-profile-camera-and-gallery) — `showPhotoChoices`, `startCamera`, `launchCamera`, `onPhotoTaken` | **Lab 9**: camera through an implicit Intent, permission explained first, `FileProvider` | 45 min |
+| 11 | [4.14 Help](#414-help-webview) — `onCreate`, `shouldOverrideUrlLoading`, the Back callback | **Lab 5**: `WebView`, `WebViewClient`, progress bar | 30 min |
+| 12 | [4.8](#48-backup-codes-and-recovery) — only the radio-button part of `activity_backup_recovery.xml` and `onChecked` | `RadioGroup` | 15 min |
+| 13 | [5.7 history workflow](#57-login-history-filter-and-csv-export--import), [5.8 revoke workflow](#58-trusted-device-revoke-and-its-effect-on-the-next-login), [5.9 profile photo](#59-profile-photo-from-camera-or-gallery), [5.13 settings](#513-settings-choices-the-next-enrollment-and-the-next-login) | How your screens talk to the database and to each other | 40 min |
+| 14 | [Section 6](#6-course-policy-coverage-matrix) and [Section 7](#7-rubric-mapping) | Which course topics your screens earn and how the marks are justified | 20 min |
+| 15 | Optional: [4.2](#42-data-layer) (`UserDao` only), [4.10](#410-location-and-map) (`LoginMapActivity`), [4.15](#415-broadcast-receivers) | What a DAO is; how the map is drawn; what a `BroadcastReceiver` does (**Lab 10**) | 40 min |
+
+**What you must be able to explain**
+
+- [ ] What an Activity is, its lifecycle (`onCreate`, `onStart`, `onResume`, `onStop`) and what a layout XML is; what **ViewBinding** does.
+- [ ] Explicit Intent vs implicit Intent, with one example of each from the app; what an Intent extra is.
+- [ ] How a `ListView` with a `SimpleAdapter` works: the list of `Map`s, `from[]`, `to[]`, the row layout, the empty view, the `ViewBinder` ([4.9](#49-login-history-and-csv)).
+- [ ] The two `DatePickerDialog`s (why the "to" date is the last millisecond of the day) and the `TimePickerDialog` used as hours : minutes.
+- [ ] The three Spinners: how the adapter and the selection listener work, and why the listeners are attached after the starting choice is selected.
+- [ ] Options menu vs context menu (which screens use which, and the methods involved).
+- [ ] Dialogs: `AlertDialog` for confirmation (revoke), a dialog with a custom view (rename), a list dialog (change photo), the lock dialog; Toast vs Snackbar vs dialog.
+- [ ] The camera flow: `TakePicture`, the `FileProvider` link, the CAMERA permission with its explanation, and what happens to the picture afterwards ([5.9](#59-profile-photo-from-camera-or-gallery)).
+- [ ] The Help `WebView`: `WebViewClient`, why JavaScript is off, why only two sites are allowed.
+- [ ] How `CountdownRingView` draws (`onMeasure`, `onDraw`, `drawArc`, `invalidate`) and how the `OnTouchListener` works.
+- [ ] Trusted devices: what Rename and Revoke change in the database and what revoking this phone does at the next login.
+- [ ] Themes: Material 3, DayNight, why `values-night/colors.xml` has the same colour names; the adaptive launcher icon with its themed layer.
+
+---
+
+## 10. Glossary
+
+Plain-language meanings of the terms used in this guide, with where they appear in the app. Terms are in alphabetical order within each group.
+
+### 10.1 Authentication and cryptography
+
+| Term | Meaning | In this app |
+|---|---|---|
+| **MFA** (multi-factor authentication) | Proving who you are with more than one kind of evidence: something you know (password), something you have (the authenticator code), something you are (fingerprint) | The whole handshake |
+| **Handshake** | The fixed sequence of checks before you get in | Password → TOTP → Biometric → Session |
+| **Authenticator app** | An app (Google Authenticator, or this one) that shows a new code every 30 seconds | `DashboardActivity`; the QR in `EnrollActivity` |
+| **Shared secret** | A random value known to both sides and never sent again after set-up | The 20 random bytes made by `TotpEngine.generateSecret` |
+| **HOTP** (HMAC-based one-time password, RFC 4226) | A one-time code from a secret and a **counter** that goes up by one each time | The core of `TotpEngine.generate` |
+| **TOTP** (time-based one-time password, RFC 6238) | HOTP where the counter is the **current time divided by 30 seconds** | `TotpEngine` |
+| **Time step / period** | The 30-second slice of time that has one code | `totp_accounts.period` |
+| **Window (±1)** | Accepting the code for the previous, current and next step to forgive clock drift | `TotpEngine.verify` |
+| **HMAC** (hash-based message authentication code) | A scrambling function that mixes a secret key with a message so that only someone with the key can produce the same result | `TotpEngine.hmac` (`javax.crypto.Mac`) |
+| **Dynamic truncation** | The RFC 4226 trick of picking 4 bytes of the HMAC at a position given by its last byte, then cutting to a few decimal digits | Steps 4–7 of `TotpEngine.generate` |
+| **Base32** | A way to write bytes with only `A–Z` and `2–7` (5 bits per character), easy to read and type | `Base32`; the secret shown under the QR |
+| **Base64** | Another bytes-to-text format (6 bits per character) | Hash, salt, ciphertext and IV in the database |
+| **otpauth URI** | The link `otpauth://totp/Issuer:account?secret=...` that a QR code carries | `TotpEngine.buildOtpAuthUri` |
+| **QR code** | A 2-D barcode; here it holds the otpauth URI | ZXing in `EnrollActivity` |
+| **Hash** | A one-way scramble: easy to compute, practically impossible to reverse | Password, backup code, session-token hashes |
+| **Salt** | Random bytes mixed into a hash so equal inputs give different hashes and ready-made tables are useless | `PasswordHasher` (16 bytes) |
+| **PBKDF2** | A password-hashing method that repeats HMAC many times (here 120,000) to make each guess slow | `PasswordHasher.derive` |
+| **SHA-1 / SHA-256** | Two hash functions; SHA-1 is the HMAC default for authenticator apps, SHA-256 hashes the session token | `TotpEngine.ALGO_*`, `SessionManager.hashToken` |
+| **Constant-time comparison** | Comparing two byte arrays in the same time wherever they differ, so timing leaks nothing | `MessageDigest.isEqual` |
+| **Timing attack** | Learning a secret by measuring how long a check takes | Why the comparisons are constant-time |
+| **AES / AES-GCM** | AES is a strong encryption method; GCM is a mode that also detects changes (an authentication tag) | `KeystoreHelper` |
+| **IV** (initialisation vector) | A fresh random value used with each encryption; needed again to decrypt; never reuse with one key | `totp_accounts.iv` |
+| **Ciphertext** | The encrypted form of the secret | `totp_accounts.secret_enc` |
+| **Android Keystore** | A protected key store of the phone: apps can *use* a key but never read its bytes | `KeystoreHelper` |
+| **SecureRandom** | Java's cryptographically strong random generator | Secrets, salts, tokens, backup codes |
+| **Entropy** | A measure of unpredictability (bits) | A backup code has 40 bits |
+| **Brute force** | Trying many guesses | Stopped by the lockout and by slow hashes |
+| **Lockout** | Refusing further attempts for a while after too many failures | `LockoutManager`: 3 failures → 5 minutes |
+| **Replay** | Reusing a code that was already seen | Not blocked inside the ±1 window (see 8.3) |
+| **User enumeration** | Finding out which usernames exist from different error messages or timings | Prevented by one message and a dummy hash |
+| **Session / session token** | "You are logged in": a random token held in memory with an expiry | `SessionManager` |
+| **Auto-lock** | Ending the session after a set time | `SessionManager`, `BaseActivity.enforceSession` |
+| **Backup code** | A one-time recovery code like `K7QM-X2PD` | `BackupCodeGenerator` |
+| **Trusted device / revoke** | A phone the user marked as trusted; revoking it means it must use a backup code at every login | `DeviceTrust`, `TrustedDevicesActivity` |
+| **Audit log / audit trail** | The record of every security event | Table `audit_log` |
+| **Suspicious login** | A login more than 100 km from the previous one | `BiometricGateActivity.completeLogin` |
+| **Haversine formula** | Distance between two latitude/longitude points on a sphere | `LocationHelper.distanceKm` |
+| **FLAG_SECURE** | An Android window flag that blocks screenshots, screen recording and the recent-apps preview of that window | `BaseActivity.onCreate` for the Dashboard, Enroll and Backup codes screens; the codes dialog |
+| **Login handshake guard** | A small in-memory record of how far the current login has got, so a later step can prove the earlier ones happened | `LoginHandshake` |
+| **CSV formula injection** | A spreadsheet running a cell that starts with `=`, `+`, `-` or `@` | `Csv.neutralizeFormula` |
+| **SQL injection** | Typing SQL code into a field to change a query | Stopped by `?` placeholders |
+| **RFC** | "Request for Comments": the numbered standards documents (4226 HOTP, 6238 TOTP, 4648 Base32, 4180 CSV) | Test vectors in `TotpEngineTest` |
+
+### 10.2 Android
+
+| Term | Meaning | In this app |
+|---|---|---|
+| **Activity** | One screen of an app | The 12 classes in `ui/` |
+| **Lifecycle** | The methods Android calls as a screen is created, shown, hidden and destroyed (`onCreate`, `onStart`, `onResume`, `onStop`, `onDestroy`) | `BaseActivity`, `DashboardActivity` |
+| **Context** | A handle to the app's environment (resources, storage, system services); an Activity is a Context | `DbHelper.getInstance(context)` |
+| **Application context** | The Context of the whole app, which lives as long as the app does | Used in `DbHelper`, `LocationHelper` to avoid leaking an Activity |
+| **Layout (XML)** | A file that describes where views sit on a screen | `res/layout/*.xml` |
+| **View** | Anything drawn on screen: button, text, image | `TextView`, `CountdownRingView` |
+| **ViewBinding** | Generated classes that give typed access to a layout's views | `ActivityLoginBinding` etc. |
+| **Custom view** | A view you draw yourself by extending `View` | `CountdownRingView` |
+| **Canvas / Paint** | The drawing surface and the "pen" settings (colour, width) | `CountdownRingView.onDraw` |
+| **ConstraintLayout / LinearLayout / ScrollView / FrameLayout** | Layout containers: relative positions / one row or column / scrolling / stacked views | Various layouts |
+| **Material Design / Material 3** | Google's design system and its component library | Theme, `TextInputLayout`, `MaterialButton`, dialogs |
+| **DayNight theme** | A theme that switches between light and dark mode | `themes.xml`, `values-night/` |
+| **Edge-to-edge** | Drawing behind the status and navigation bars | `BaseActivity.onCreate` |
+| **Intent** | A message asking Android to start a screen or do something | `startActivity(...)` |
+| **Explicit Intent** | Names the exact class to start | Splash → Login |
+| **Implicit Intent** | Says what you want done (send, view); Android finds an app | `ACTION_SEND` for the QR and the codes |
+| **Intent extra** | A named value attached to an Intent | `user_id`, `suspicious_km` |
+| **Chooser** | The "Share with…" list | `Intent.createChooser` |
+| **Back stack / task flags** | The history of screens Back walks through; `NEW_TASK` and `CLEAR_TASK` start fresh | `BaseActivity.goToLogin`, `completeLogin` |
+| **Activity Result API** | The modern way to start a screen and receive its answer (`registerForActivityResult`) | Launchers in Login, TOTP, Recovery, History |
+| **Result code** | The number a finished screen returns (`RESULT_OK`, `RESULT_CANCELED`, custom) | `BackupRecoveryActivity.RESULT_LOCKED` |
+| **Manifest** | The app's ID card: screens, permissions, providers | `AndroidManifest.xml` |
+| **exported** | Whether other apps may start a component | Only `SplashActivity` |
+| **Permission (runtime)** | Something the user must allow while the app runs | Location |
+| **Toast** | A small message that fades by itself | `BaseActivity.showToast` |
+| **AlertDialog** | A pop-up asking for a decision or giving information | `MaterialAlertDialogBuilder` |
+| **DatePickerDialog** | A calendar pop-up | `LoginHistoryActivity` |
+| **Options menu** | The overflow (⋮) menu of the toolbar | Dashboard, History |
+| **Context menu** | The menu that appears on a long press | QR image, trusted-device rows |
+| **ListView** | A scrolling list of rows | History, trusted devices |
+| **Adapter** | The helper that turns data into the rows of a list | `SimpleAdapter` |
+| **SimpleAdapter / ViewBinder** | An adapter that maps `Map` keys onto row views; the binder customises how one value is shown | `showRows`, `showDevices` |
+| **Fragment** | A reusable piece of a screen | `SupportMapFragment` |
+| **ViewModel** | An object that outlives screen rotation so state is not lost | `EnrollViewModel`, `BackupCodesViewModel` |
+| **Configuration change** | Rotation, language, dark mode: Android normally rebuilds the Activity | `configChanges` in the manifest |
+| **UI thread / main thread** | The only thread that may touch views; it must stay free | `BaseActivity.runInBackground` |
+| **Handler / Looper / Runnable** | Tools to run code later on a thread | `DashboardActivity.tick` |
+| **ExecutorService** | A pool that runs jobs on background threads | `BaseActivity`, `BackupCodesViewModel` |
+| **Lambda / Supplier / Consumer** | Short inline functions; one returns a value, one takes a value | `runInBackground(work, onDone)` |
+| **BroadcastReceiver** | A listener for system announcements (airplane mode, screen off) | `AirplaneModeReceiver`, `ScreenOffReceiver` |
+| **RECEIVER_NOT_EXPORTED** | A flag saying other apps may not send to a receiver registered in code (required since Android 14) | `BaseActivity.registerReceivers` |
+| **Snackbar** | A message bar at the bottom of the screen that fades by itself | Airplane-mode reminder |
+| **FileProvider** | Hands other apps a temporary `content://` link to one of our files | QR sharing, `file_paths.xml` |
+| **Uri** | An address of a resource (`content://...`) | SAF results, FileProvider |
+| **Storage Access Framework (SAF)** | The system file picker: the user chooses a file and Android gives us access to just that file | `CreateDocument`, `OpenDocument` |
+| **ContentResolver** | Opens streams for a `content://` Uri | `FileExporter`, `CsvImporter.readText` |
+| **SharedPreferences** | A small private key-value file | `secureauth_prefs` |
+| **WebView / WebViewClient** | A mini browser inside a screen / the helper that decides which links it may open | `HelpActivity` |
+| **Spinner** | A drop-down list | Code length, period and algorithm in `SettingsActivity` |
+| **TimePickerDialog** | A clock pop-up for choosing hours and minutes | Auto-lock time in `SettingsActivity` |
+| **ActivityResultContracts.TakePicture / PickVisualMedia** | Ready-made contracts that start the camera app / the system photo picker and return the answer | `ProfileActivity` |
+| **EXIF** | A note inside a photo file, for example "this side up" | `AvatarStore.orientationOf` |
+| **inSampleSize** | A `BitmapFactory` option that decodes a picture at 1/2, 1/4 ... of its size to save memory | `AvatarStore.sampleSize` |
+| **Bitmap** | A picture held in memory as pixels | QR code, profile photo |
+| **Plurals resource** | A string with different texts for "1" and "other" numbers | `R.plurals.export_done` |
+| **Lint** | Android's static checker for mistakes in code and resources | `./gradlew lintDebug` |
+| **BiometricPrompt** | The system dialog for fingerprint/face/PIN | `BiometricGateActivity` |
+| **Fused Location Provider** | Google's service that picks GPS/Wi-Fi/cell to find the phone | `LocationHelper` |
+| **Google Play services** | Google's library layer (Maps, Location) | `play-services-*` |
+| **Accessibility / content description** | Spoken text for screen readers | `setContentDescription` |
+| **dp** | Density-independent pixel: a size that looks the same on all screens | Layouts |
+
+### 10.3 Data, build and tests
+
+| Term | Meaning | In this app |
+|---|---|---|
+| **SQLite** | A small database in one file | `secureauth.db` |
+| **SQLiteOpenHelper** | Android base class that creates and upgrades the database | `DbHelper` |
+| **DAO** (Data Access Object) | A class that holds all the SQL for one table | `UserDao`, … |
+| **Model class** | A plain object that holds one row | `User`, `AuditLog`, … |
+| **Cursor / ContentValues** | The result rows of a query / a column-to-value map for writes | All DAOs |
+| **Primary key / Foreign key** | The unique id of a row / a column that must match a row in another table | `id`, `user_id` |
+| **ON DELETE CASCADE** | Deleting a parent row deletes its children | All child tables |
+| **Index** | A lookup structure that makes a query fast | `idx_audit_log_user_ts` |
+| **Transaction** | A group of changes that all succeed or all fail | `replaceForUser`, `insertAll` |
+| **Atomic** | Happening as one indivisible step | `markUsed` |
+| **Singleton** | A class with exactly one shared instance | `DbHelper`, `SessionManager` |
+| **Epoch milliseconds** | Time as the number of ms since 1 January 1970 | All timestamps |
+| **Gradle** | The tool that builds the app | `build.gradle.kts` |
+| **Version catalog** | One file listing all library versions | `libs.versions.toml` |
+| **manifestPlaceholders** | Gradle values inserted into the manifest while building | Maps API key |
+| **R8 / minify** | The tool that shrinks and obfuscates release code | Off for now |
+| **APK / AAB** | The installable file / the bundle uploaded to the Play Store | Not produced yet |
+| **Emulator (AVD)** | A virtual phone on the computer | Unit 1 |
+| **JUnit** | Java's unit-test library | `src/test` |
+| **Espresso / ActivityScenario** | Android's UI-test robot and the helper that launches a screen in a test | `src/androidTest` |
+| **Instrumented test** | A test that runs on a device or emulator | `connectedAndroidTest` |
+| **RFC test vector** | A published input/output pair used to prove an implementation correct | `TotpEngineTest` |
+
+---
+
+## 11. Not implemented and known issues
+
+Nothing below has been fixed by this guide; it only records what was found while reading the code, the plan, the build files and the review documents. (The plan is `SECUREAUTH_PLAN.md`; its tracker marks Phases 0–16 as done.)
+
+### 11.1 Planned or expected, but not done
+
+| Item | State |
+|---|---|
+| **Actual signed upload to Google Play** | Not done. The release build is shrunk and the signing is wired (it reads `keystore.properties`), but the key itself and the upload need the team's own Play developer account; `docs/RELEASE.md` explains the steps. Without the key `./gradlew bundleRelease` gives an **unsigned** bundle |
+| **Maps key restricted to the release certificate** | Done in Google Cloud, not in the app (see `docs/RELEASE.md`); the map shows no tiles without any `MAPS_API_KEY` in `local.properties` |
+| **Per-phase commits** | The repository has one commit ("phases 0-12 baseline") and a large uncommitted change for Phases 13–16, so the per-phase commit evidence for rubric 4 still has to be created (`docs/CONTRIBUTIONS.md` is complete) |
+| A real **screen-off** check by hand | `ReceiverFlowTest` covers it; the plan notes it was not tried on a real screen-off (the emulator had a PIN the author did not have) |
+| A UI to **trust** a phone after registration, or to **un-revoke** one | A phone can be trusted only at registration (`RegisterActivity` → `DeviceTrust.trustCurrentDevice`); revoking is one-way |
+| A "delete account" or "change password" screen | `UserDao.delete` exists but no screen uses it |
+| Calculator screen (Lab 2) | Not a feature of this project |
+| The security limits kept on purpose | TOTP reuse inside its window, "set up again" needs only a live session, enrollment protected by the password alone, imported CSV rows can become the "previous login" — see 8.3 and `docs/SECURITY_REVIEW.md` |
+
+### 11.2 Leftovers in the files
+
+- No `TODO` or `FIXME` remains in `app/src/main`.
+- `ExampleUnitTest.java` and `ExampleInstrumentedTest.java` are the Android Studio template tests.
+- Comments that have become out of date: `LockoutManager` ("Phase 7 reuses this for wrong TOTP codes" — it already does) and the "(Phase N)" wording in the `package-info.java` files; `app/src/main/keepRules/rules.keep` is the Android Studio template (the release build needed no extra rule).
+- Many DAO methods are used only by tests, not by any screen: `UserDao.list/update/delete`, `TotpAccountDao.insert/getById/update/delete`, `BackupCodeDao.insert/getById/update/delete`, `AuditLogDao.getById/update/delete`, `TrustedDeviceDao.delete`, `SessionDao.getById/listForUser/update`; also `Base32.decode` and `SessionManager.getExpiresAt`. They are kept for completeness of CRUD and for tests.
+- `BiometricGateActivity.EXTRA_SHOW_PROMPT` exists only for tests (the app never sets it).
+- `DbHelper.onUpgrade` is empty and `DB_VERSION` is 1: the first schema change will need a real migration (never dropping tables).
+- All 218 string and plurals resources are used; there are no hard-coded user-visible strings in layouts.
+
+### 11.3 Problems noticed while reading (not fixed)
+
+1. **The fingerprint step is not cryptographically tied to the key.** `KeystoreHelper` has no "user authentication required" and `BiometricPrompt` has no `CryptoObject` (see 8.3, item 1). The handshake guard (`LoginHandshake`) and `exported="false"` protect the *flow*, not the key.
+2. **Process death restarts the login.** The session token and the `LoginHandshake` stage live only in memory. If Android kills the app's process while the user is half-way through (or logged in), the restored screen finds no proof and sends the user to Login. Safe, but worth knowing for a demo.
+3. **The screen-off lock fires only while a screen of the app is visible** (the receivers are registered between `onStart` and `onStop`). If the app is already in the background when the screen turns off, the lock comes from the session expiry check at the next `onResume`.
+4. **Trusted-devices list can hold at most one phone per user in practice.** The only code that adds a row is `trustCurrentDevice`, called once at registration, so "revoke another device" can only be exercised with seeded data, and revoking another device changes nothing.
+5. **A revoked phone burns a backup code at every login** and, once the codes run out, the login cannot complete on that phone (the screen says so). There is no way to restore trust.
+6. **Rotation during the first location prompt loses the login attempt.** `LoginActivity` is rebuilt on rotation, so the `afterLocationPermission` callback stored in `BaseActivity` is gone when the permission dialog returns; nothing continues until the user taps *Log in* again (the user is not asked twice, because `markAsked` was already saved). `BiometricGateActivity` and `BackupRecoveryActivity` avoid this with `configChanges`.
+7. **Imported CSV rows can influence the suspicious-login check** (they can become the "previous login") and the audit log is editable by import (see 8.3, item 5).
+8. **Lockout can be used to lock someone else out**, and the lock dialog confirms that a username exists (see 8.3, item 9).
+9. **Location can add up to about 16 seconds to a login** in the worst case: `LocationHelper` waits up to 8 seconds at the password step and again at the biometric step when no position can be found.
+10. **Clipboard.** Copied codes/secrets are never cleared automatically.
+11. **Changing digits, period or algorithm in Settings does not touch the existing authenticator**, by design; until the user runs *Set up authenticator again* the old values stay in use, and 8 digits or 60 seconds may not work in Google Authenticator (the screen warns about it).
+12. **Test counts and the old guide.** A previous, shorter `docs/CODEBASE_GUIDE.md` (ending in Section 2) was replaced by this file; test counts in this guide (179 local, 291 device) are as of writing and will change as the project grows.

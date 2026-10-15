@@ -4,6 +4,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 
+import android.view.WindowManager;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
@@ -51,6 +53,11 @@ public class BackupCodesActivity extends BaseActivity {
     @Override
     protected boolean requiresSession() {
         return true;
+    }
+
+    @Override
+    protected boolean isSecureScreen() {
+        return true; // shows live codes / backup codes
     }
 
     @Override
@@ -199,6 +206,9 @@ public class BackupCodesActivity extends BaseActivity {
                     refreshRemaining();
                 })
                 .create();
+        // A dialog is its own window, so the Activity's FLAG_SECURE does not cover it
+        codesDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE);
         codesDialog.show();
     }
 

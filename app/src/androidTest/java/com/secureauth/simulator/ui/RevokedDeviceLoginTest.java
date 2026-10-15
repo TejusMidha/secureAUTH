@@ -115,6 +115,7 @@ public class RevokedDeviceLoginTest {
     }
 
     private ActivityScenario<TotpVerifyActivity> launchTotp() {
+        TestUtils.passPasswordStep(userId); // step 1 comes first in the real flow
         return ActivityScenario.launch(new Intent(context, TotpVerifyActivity.class)
                 .putExtra(TotpVerifyActivity.EXTRA_USER_ID, userId));
     }

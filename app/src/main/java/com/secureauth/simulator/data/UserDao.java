@@ -67,6 +67,14 @@ public class UserDao {
         updateLong(id, "locked_until", lockedUntil);
     }
 
+    /** Saves where the profile photo file is (pass null to clear it). Other columns stay as they are. */
+    public void setAvatarUri(long id, String avatarUri) {
+        ContentValues values = new ContentValues();
+        values.put("avatar_uri", avatarUri);
+        helper.getWritableDatabase().update(
+                DbHelper.TABLE_USERS, values, "id = ?", new String[]{String.valueOf(id)});
+    }
+
     private void updateLong(long id, String column, long value) {
         ContentValues values = new ContentValues();
         values.put(column, value);

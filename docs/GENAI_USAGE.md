@@ -17,3 +17,7 @@ Every member must be able to explain the code they own. Log each use of a genera
 | 2026-10-14 | Claude Code | "Do Phase 10" - login history list, date filter, CSV export/import, tests | |
 | 2026-10-14 | Claude Code | "Do Phase 11" - location helper, permission flow, suspicious-login check, login map, tests | |
 | 2026-10-14 | Claude Code | "Do Phase 12" - trusted devices screen, trust at registration, revoked-device backup-code step, tests | |
+| 2026-10-15 | Claude Code | "Do Phase 13" - profile screen, camera and gallery photo, avatar storage, Dashboard toolbar photo, tests | |
+| 2026-10-15 | Claude Code | "Do Phase 14" - settings screen, help WebView, airplane-mode and screen-off receivers, tests | |
+| 2026-10-15 | Claude Code | "Do Phase 15" - release polish: R8, FLAG_SECURE, icon, backup off, lint fixes, privacy policy, Play data-safety draft, signing guide | |
+| 2026-10-15 | Claude Code | "Do Phase 16" - review against the hard rules and the handshake, LoginHandshake guard, tests, demo script, viva guide, security review | |

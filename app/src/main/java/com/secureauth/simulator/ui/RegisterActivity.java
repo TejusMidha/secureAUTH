@@ -14,6 +14,7 @@ import com.secureauth.simulator.data.AuditEvent;
 import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.DeviceTrust;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.TrustedDeviceDao;
 import com.secureauth.simulator.data.User;
 import com.secureauth.simulator.data.UserDao;
@@ -156,6 +157,7 @@ public class RegisterActivity extends BaseActivity {
             return USERNAME_TAKEN; // someone took it between the check and the insert
         }
         auditDao.log(userId, AuditEvent.REGISTER, AuditEvent.RESULT_SUCCESS);
+        LoginHandshake.getInstance().registered(userId, System.currentTimeMillis()); // enrollment may open for this account
         if (trustThisDevice) {
             DeviceTrust.trustCurrentDevice(getApplicationContext(), deviceDao, auditDao, userId);
         }

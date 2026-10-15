@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- "%d followed by a word" is only a problem when the number can be 1. Here it cannot:
+         6 or 8 digits, 30 or 60 seconds, "2 attempts left" (one attempt has its own text),
+         and "N of 10 codes remaining". Texts that CAN be 1 (exported entries) use plurals. -->
+    <issue id="PluralsCandidate" severity="ignore" />
+</lint>

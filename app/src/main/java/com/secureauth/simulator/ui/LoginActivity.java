@@ -15,6 +15,7 @@ import com.secureauth.simulator.data.AuditEvent;
 import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.LockoutManager;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.User;
 import com.secureauth.simulator.data.UserDao;
 import com.secureauth.simulator.databinding.ActivityLoginBinding;
@@ -95,6 +96,13 @@ public class LoginActivity extends BaseActivity {
                 v -> registerLauncher.launch(new Intent(this, RegisterActivity.class)));
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Back at the first step (also after cancelling a later one): whatever was reached is forgotten
+        LoginHandshake.getInstance().clear();
+    }
+
     private void onLoginClicked() {
         String username = InputRules.normalizeUsername(String.valueOf(binding.inputUsername.getText()));
         char[] password = readChars(binding.inputPassword);
@@ -149,6 +157,8 @@ public class LoginActivity extends BaseActivity {
             // accepted; otherwise someone who knows the password could log in again to get fresh
             // attempts at the 6-digit code every time.
             auditDao.log(user.id, AuditEvent.PASSWORD_OK, AuditEvent.RESULT_SUCCESS, lat, lng);
+            // Step 1 is done and proven in memory: the code step will refuse to open without this
+            LoginHandshake.getInstance().passwordAccepted(user.id, now);
             return new Outcome(Status.OK, user.id, 0);
         }
 

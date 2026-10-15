@@ -20,6 +20,7 @@ import com.secureauth.simulator.data.AuditLog;
 import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.LockoutManager;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.SessionDao;
 import com.secureauth.simulator.data.SessionManager;
 import com.secureauth.simulator.data.UserDao;
@@ -34,6 +35,14 @@ import com.secureauth.simulator.location.LocationHelper;
 public class BiometricGateActivity extends BaseActivity {
 
     public static final String EXTRA_USER_ID = "user_id";
+
+    /**
+     * Optional, true by default. Tests pass false so the system fingerprint prompt does not open
+     * over the screen under test (it cannot be pressed from a test, and it hides the screen when the
+     * phone has a screen lock). The app itself never sets it. With the prompt off no check can
+     * succeed, so no session can be created through this switch.
+     */
+    public static final String EXTRA_SHOW_PROMPT = "show_prompt";
 
     /** Returned by the login step when the place is fine (a real distance is always positive). */
     private static final double NOT_SUSPICIOUS = -1.0;
@@ -59,6 +68,11 @@ public class BiometricGateActivity extends BaseActivity {
             finish();
             return;
         }
+        // Steps 1 and 2 must really have passed; an Intent saying so is not proof
+        if (!LoginHandshake.getInstance().allowsBiometricStep(userId, System.currentTimeMillis())) {
+            goToLogin();
+            return;
+        }
 
         binding = ActivityBiometricGateBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
@@ -82,8 +96,17 @@ public class BiometricGateActivity extends BaseActivity {
         binding.buttonBackToLogin.setOnClickListener(v -> finish());
 
         // After a rotation the system keeps the open prompt and re-attaches our new callback
-        if (savedInstanceState == null) {
+        if (savedInstanceState == null && getIntent().getBooleanExtra(EXTRA_SHOW_PROMPT, true)) {
             startAuthentication();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (isFinishing()) {
+            // Cancelled, locked or finished: the earlier steps may not be reused to open this screen again
+            LoginHandshake.getInstance().clear();
         }
     }
 
@@ -203,6 +226,7 @@ public class BiometricGateActivity extends BaseActivity {
                 }
 
                 SessionManager.getInstance().create(sessionDao, userId, autoLockMs, now);
+                LoginHandshake.getInstance().clear(); // the handshake is complete: nothing left to prove
                 auditDao.log(userId, AuditEvent.SESSION_START, AuditEvent.RESULT_SUCCESS, lat, lng);
                 if (suspiciousKm != NOT_SUSPICIOUS) {
                     auditDao.log(userId, AuditEvent.SUSPICIOUS_LOCATION, AuditEvent.RESULT_WARNING, lat, lng);

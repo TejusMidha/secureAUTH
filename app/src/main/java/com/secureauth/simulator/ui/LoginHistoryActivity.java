@@ -242,7 +242,7 @@ public class LoginHistoryActivity extends BaseActivity {
         final List<AuditLog> rows = new ArrayList<>(shown);
         final String csv = FileExporter.formatAuditCsv(rows, TimeZone.getDefault());
         runInBackground(() -> FileExporter.writeText(getContentResolver(), destination, csv),
-                ok -> showToast(ok ? getString(R.string.export_done, rows.size())
+                ok -> showToast(ok ? getResources().getQuantityString(R.plurals.export_done, rows.size(), rows.size())
                         : getString(R.string.export_failed)));
     }
 

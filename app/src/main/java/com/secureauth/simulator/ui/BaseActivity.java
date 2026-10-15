@@ -4,12 +4,14 @@ import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PersistableBundle;
 import android.text.Editable;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.Toast;
 
@@ -19,19 +21,24 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
 import com.secureauth.simulator.R;
 import com.secureauth.simulator.data.AuditEvent;
 import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.LockoutManager;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.SessionDao;
 import com.secureauth.simulator.data.SessionManager;
 import com.secureauth.simulator.location.LocationHelper;
+import com.secureauth.simulator.receiver.AirplaneModeReceiver;
+import com.secureauth.simulator.receiver.ScreenOffReceiver;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -55,11 +62,38 @@ public abstract class BaseActivity extends AppCompatActivity {
             new ActivityResultContracts.RequestMultiplePermissions(), result -> continueAfterLocationPermission());
     private Runnable afterLocationPermission;
 
+    // Broadcast receivers, registered while the screen is visible (see onStart / onStop)
+    private final AirplaneModeReceiver airplaneModeReceiver = new AirplaneModeReceiver(this::handleAirplaneModeOn);
+    private final ScreenOffReceiver screenOffReceiver = new ScreenOffReceiver(this::handleScreenOff);
+    private boolean receiversRegistered;
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // Draw behind the status/navigation bars (this is the default look on Android 15+)
         EdgeToEdge.enable(this);
+        if (isSecureScreen()) {
+            // Blocks screenshots and screen recording of this window, and blanks its preview in
+            // the recent-apps list, so a code or secret cannot leak that way
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
+
+    /** Screens that show a code or a secret override this to return true (see FLAG_SECURE above). */
+    protected boolean isSecureScreen() {
+        return false;
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        registerReceivers();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unregisterReceivers();
     }
 
     @Override
@@ -74,6 +108,55 @@ public abstract class BaseActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         executor.shutdown();
+    }
+
+    // ---- broadcast receivers ----------------------------------------------------------------
+
+    /**
+     * Listens for airplane mode and screen-off while this screen is visible. Both broadcasts come
+     * from Android itself, so the receivers are registered as NOT exported: since Android 14 an
+     * app must say whether other apps may send to a receiver registered in code, and nobody else
+     * has any business sending these.
+     */
+    private void registerReceivers() {
+        if (receiversRegistered) {
+            return;
+        }
+        ContextCompat.registerReceiver(this, airplaneModeReceiver,
+                new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(this, screenOffReceiver,
+                new IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED);
+        receiversRegistered = true;
+    }
+
+    private void unregisterReceivers() {
+        if (!receiversRegistered) {
+            return;
+        }
+        unregisterReceiver(airplaneModeReceiver);
+        unregisterReceiver(screenOffReceiver);
+        receiversRegistered = false;
+    }
+
+    /** Airplane mode was just switched on: the codes do not need a network, say so. */
+    void handleAirplaneModeOn() {
+        View content = findViewById(android.R.id.content);
+        if (content != null) {
+            Snackbar.make(content, R.string.airplane_mode_message, Snackbar.LENGTH_LONG).show();
+        }
+    }
+
+    /**
+     * The screen turned off: a protected screen with a live session locks at once. The session is
+     * ended (memory and database row, AUTO_LOCK written to the audit log) and Login is opened on
+     * an empty back stack. Screens that need no session, such as Login itself, do nothing.
+     */
+    void handleScreenOff() {
+        if (!requiresSession() || !SessionManager.getInstance().isActive(System.currentTimeMillis())) {
+            return;
+        }
+        endSession(AuditEvent.AUTO_LOCK);
+        goToLogin();
     }
 
     // ---- session protection -----------------------------------------------------------------
@@ -113,6 +196,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      * background) deletes its database row and writes the audit entry, if one is given.
      */
     protected void endSession(@Nullable String auditEvent) {
+        LoginHandshake.getInstance().clear();
         SessionManager.Snapshot ended = SessionManager.getInstance().clear();
         if (ended == null) {
             return;

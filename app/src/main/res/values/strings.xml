@@ -48,10 +48,10 @@
     <string name="button_copy">Copy</string>
     <string name="secret_copied">Secret copied</string>
     <string name="button_scanned">I\'ve scanned it</string>
-    <string name="enroll_confirm_prompt">Enter the 6-digit code your authenticator app shows right now.</string>
-    <string name="hint_code">6-digit code</string>
+    <string name="enroll_confirm_prompt">Enter the %1$d-digit code your authenticator app shows right now.</string>
+    <string name="hint_code">%1$d-digit code</string>
     <string name="button_confirm">Confirm</string>
-    <string name="error_code_length">Enter all 6 digits</string>
+    <string name="error_code_length">Enter all %1$d digits</string>
     <string name="error_code_wrong">That code is not correct. Check the code and your phone\'s clock, then try again.</string>
     <string name="enroll_success">Authenticator set up. Please log in.</string>
     <string name="enroll_save_failed">Could not store the secret securely. Please try again.</string>
@@ -117,9 +117,12 @@
     <string name="no_location">No location</string>
     <string name="menu_export_csv">Export CSV</string>
     <string name="menu_import_csv">Import CSV</string>
-    <string name="export_done">Exported %1$d entries</string>
+    <plurals name="export_done">
+        <item quantity="one">Exported %1$d entry</item>
+        <item quantity="other">Exported %1$d entries</item>
+    </plurals>
     <string name="export_failed">Could not save the file</string>
-    <string name="import_result">Imported %1$d, skipped %2$d duplicates and %3$d invalid rows</string>
+    <string name="import_result">Imported: %1$d. Skipped as duplicates: %2$d. Skipped as invalid: %3$d.</string>
     <string name="import_failed">That file could not be imported. It needs a header row with ts and event columns.</string>
     <string name="cd_status_ok">Success</string>
     <string name="cd_status_fail">Failed</string>
@@ -171,7 +174,6 @@
     <string name="menu_settings">Settings</string>
     <string name="menu_help">Help</string>
     <string name="menu_logout">Log out</string>
-    <string name="coming_later">%1$s is coming in a later phase</string>
 
     <!-- Trusted devices -->
     <string name="trusted_devices_empty">No trusted devices yet. Tick "Trust this device" when you register an account.</string>
@@ -179,6 +181,7 @@
     <string name="device_status_trusted">Trusted</string>
     <string name="device_status_revoked">Revoked</string>
     <string name="device_this_device">This device</string>
+    <string name="device_state_current">%1$s - %2$s</string>
     <string name="menu_rename_device">Rename</string>
     <string name="menu_revoke_device">Revoke</string>
     <string name="rename_title">Rename device</string>
@@ -197,4 +200,58 @@
     <string name="device_action_failed">Could not update the device</string>
     <string name="recovery_subtitle_revoked">This phone was revoked, so one unused backup code is needed as well.</string>
     <string name="recovery_revoked_no_codes">This phone was revoked and the account has no unused backup codes, so the login cannot continue.</string>
+
+    <!-- Profile -->
+    <string name="profile_member_since">Member since %1$s</string>
+    <string name="profile_authenticator">Authenticator: %1$s</string>
+    <string name="profile_not_enrolled">Authenticator: not set up</string>
+    <string name="button_change_photo">Change photo</string>
+    <string name="change_photo_title">Change photo</string>
+    <string name="photo_take">Take photo</string>
+    <string name="photo_gallery">Choose from gallery</string>
+    <string name="photo_updated">Profile photo updated</string>
+    <string name="photo_failed">That file could not be used as a photo</string>
+    <string name="photo_no_camera">No camera app is available on this phone</string>
+    <string name="camera_rationale_title">Use the camera?</string>
+    <string name="camera_rationale_message">The camera is only used to take your profile photo. The picture stays on this phone.</string>
+    <string name="photo_camera_denied">Camera access was not allowed. You can still choose a photo from the gallery.</string>
+    <string name="cd_avatar">Your profile photo</string>
+    <string name="cd_avatar_none">No profile photo yet</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_authenticator_section">New authenticator setup</string>
+    <string name="settings_authenticator_hint">These choices are used the next time you set up an authenticator. Your current one keeps working until then.</string>
+    <string name="label_digits">Code length</string>
+    <string name="label_period">Code changes every</string>
+    <string name="label_algorithm">Algorithm</string>
+    <string name="choice_digits">%1$d digits</string>
+    <string name="choice_period">%1$d seconds</string>
+    <string name="choice_sha1">SHA-1 (default)</string>
+    <string name="choice_sha256">SHA-256</string>
+    <string name="settings_warning">Google Authenticator and some other apps only work with 6 digits, 30 seconds and SHA-1. With other choices the code may not match. You must set up your authenticator again (scan a new QR code) for them to take effect.</string>
+    <string name="button_setup_again">Set up authenticator again</string>
+    <string name="setup_again_title">Set up again?</string>
+    <string name="setup_again_message">You will get a new QR code. Your current authenticator stops working once you confirm a code from the new one.</string>
+    <string name="settings_autolock_section">Auto-lock</string>
+    <string name="settings_autolock_value">Log out after %1$s</string>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="duration_minutes_seconds">%1$d min %2$d s</string>
+    <string name="settings_autolock_hint">Applies from your next login.</string>
+    <string name="button_change">Change</string>
+    <string name="autolock_picker_title">Auto-lock time (hours : minutes)</string>
+    <string name="autolock_range_error">Choose between 0:01 and 0:30 (1 to 30 minutes)</string>
+    <string name="checkbox_record_location">Record login location</string>
+    <string name="settings_privacy_section">Privacy</string>
+
+    <!-- Help -->
+    <string name="help_title">Help</string>
+    <string name="button_help_totp">How TOTP works</string>
+    <string name="button_help_rfc">RFC 6238</string>
+    <string name="help_load_error">The page could not be loaded. Check your connection and try again.</string>
+    <string name="help_blocked">Only the help pages can be opened here</string>
+    <string name="cd_help_progress">Page loading</string>
+
+    <!-- Background receivers -->
+    <string name="airplane_mode_message">Offline: TOTP still works — it only needs the clock</string>
 </resources>

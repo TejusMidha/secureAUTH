@@ -83,6 +83,47 @@ final class TestUtils {
         return TotpEngine.generate(secret, System.currentTimeMillis(), 6, 30, TotpEngine.ALGO_SHA1);
     }
 
+    /** As if the password step had just passed for this user (the code step and recovery refuse to open without it). */
+    static void passPasswordStep(long userId) {
+        com.secureauth.simulator.data.LoginHandshake.getInstance().passwordAccepted(userId, System.currentTimeMillis());
+    }
+
+    /** As if the password and the code step had both just passed (the fingerprint step refuses to open without it). */
+    static void passCodeStep(long userId) {
+        passPasswordStep(userId);
+        com.secureauth.simulator.data.LoginHandshake.getInstance().codeAccepted(userId, System.currentTimeMillis());
+    }
+
+    /** As if this account had just been created on the Register screen (enrollment may open for it). */
+    static void justRegistered(long userId) {
+        com.secureauth.simulator.data.LoginHandshake.getInstance().registered(userId, System.currentTimeMillis());
+    }
+
+    /** A copy of everything in the settings file, so a test that changes settings can put it back. */
+    static java.util.Map<String, Object> snapshotSettings(Context context) {
+        return new java.util.HashMap<>(context.getSharedPreferences(
+                com.secureauth.simulator.data.AppSettings.PREFS_NAME, Context.MODE_PRIVATE).getAll());
+    }
+
+    /** Puts the settings file back exactly as {@link #snapshotSettings} saw it. */
+    static void restoreSettings(Context context, java.util.Map<String, Object> snapshot) {
+        android.content.SharedPreferences.Editor editor = context.getSharedPreferences(
+                com.secureauth.simulator.data.AppSettings.PREFS_NAME, Context.MODE_PRIVATE).edit().clear();
+        for (java.util.Map.Entry<String, Object> entry : snapshot.entrySet()) {
+            Object v = entry.getValue();
+            if (v instanceof Integer) {
+                editor.putInt(entry.getKey(), (Integer) v);
+            } else if (v instanceof Long) {
+                editor.putLong(entry.getKey(), (Long) v);
+            } else if (v instanceof Boolean) {
+                editor.putBoolean(entry.getKey(), (Boolean) v);
+            } else if (v instanceof String) {
+                editor.putString(entry.getKey(), (String) v);
+            }
+        }
+        editor.commit();
+    }
+
     /** Starts a real session (database row + token in memory) as BiometricGateActivity would. */
     static void startSession(Context context, long userId, long durationMs) {
         SessionManager.getInstance().create(new SessionDao(DbHelper.getInstance(context)),

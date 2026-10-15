@@ -55,13 +55,20 @@ public class AuthFlowTest {
 
     private static final String PASSWORD = "Correct-Horse-9";
 
+    private Context context;
+    private java.util.Map<String, Object> savedSettings;
     private UserDao users;
     private AuditLogDao audit;
     private String username;
 
     @Before
     public void setUp() {
-        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        // These tests are about the password and code steps, not about location. Saying "the
+        // explanation was already shown" keeps the first-login location dialog (which depends on
+        // what the phone has granted) from covering the screens under test.
+        savedSettings = TestUtils.snapshotSettings(context);
+        new com.secureauth.simulator.location.LocationHelper(context).markAsked();
         DbHelper db = DbHelper.getInstance(context);
         users = new UserDao(db);
         audit = new AuditLogDao(db);
@@ -70,6 +77,7 @@ public class AuthFlowTest {
 
     @After
     public void tearDown() {
+        TestUtils.restoreSettings(context, savedSettings);
         SessionManager.getInstance().clear(); // a test may have logged in all the way
         User u = users.findByUsername(username);
         if (u != null) {
@@ -87,6 +95,21 @@ public class AuthFlowTest {
         u.salt = hashed.salt;
         u.createdAt = System.currentTimeMillis();
         return users.insert(u);
+    }
+
+    /**
+     * On a phone with a screen lock the real system prompt opens over the gate and keeps the window
+     * focus. Success was reported by hand above, so the prompt is dismissed (reflection: the field
+     * is private; the screen has already marked itself done, so it ignores the cancel).
+     */
+    private static void closeSystemPrompt(BiometricGateActivity gate) {
+        try {
+            java.lang.reflect.Field field = BiometricGateActivity.class.getDeclaredField("prompt");
+            field.setAccessible(true);
+            ((androidx.biometric.BiometricPrompt) field.get(gate)).cancelAuthentication();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 
     private static void type(int viewId, String text) {
@@ -159,7 +182,10 @@ public class AuthFlowTest {
             assertEquals(-1L, SessionManager.getInstance().getUserId()); // no session before step 3
 
             BiometricGateActivity gate = (BiometricGateActivity) TestUtils.visibleActivity();
-            InstrumentationRegistry.getInstrumentation().runOnMainSync(gate::handleSuccess);
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                gate.handleSuccess();
+                closeSystemPrompt(gate);
+            });
 
             waitUntilDisplayed(withId(R.id.text_issuer)); // the Dashboard
             assertEquals(saved.id, SessionManager.getInstance().getUserId());

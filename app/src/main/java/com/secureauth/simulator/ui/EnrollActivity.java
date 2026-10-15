@@ -20,9 +20,12 @@ import com.journeyapps.barcodescanner.BarcodeEncoder;
 import com.secureauth.simulator.R;
 import com.secureauth.simulator.crypto.KeystoreHelper;
 import com.secureauth.simulator.crypto.TotpEngine;
+import com.secureauth.simulator.data.AppSettings;
 import com.secureauth.simulator.data.AuditEvent;
 import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
+import com.secureauth.simulator.data.LoginHandshake;
+import com.secureauth.simulator.data.SessionManager;
 import com.secureauth.simulator.data.TotpAccount;
 import com.secureauth.simulator.data.TotpAccountDao;
 import com.secureauth.simulator.data.User;
@@ -57,9 +60,15 @@ public class EnrollActivity extends BaseActivity {
     private AuditLogDao auditDao;
 
     private long userId;
-    // Holds the default settings (SHA-1, 6 digits, 30 s) that Google Authenticator expects
+    // The code length, period and algorithm for the new secret. They start as the defaults Google
+    // Authenticator expects (6 digits, 30 s, SHA-1) and follow the choices made in Settings.
     private final TotpAccount settings = new TotpAccount();
     private Bitmap qrBitmap;
+
+    @Override
+    protected boolean isSecureScreen() {
+        return true; // shows the QR code and the secret in text
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -69,10 +78,28 @@ public class EnrollActivity extends BaseActivity {
             finish(); // started without a user: nothing to enroll
             return;
         }
+        // Replacing an authenticator is sensitive: only right after registering, after a correct
+        // password, or from a logged-in session of the same user (Settings)
+        long now = System.currentTimeMillis();
+        boolean allowed = LoginHandshake.getInstance().allowsEnroll(userId, now)
+                || SessionManager.getInstance().getUserId() == userId;
+        if (!allowed) {
+            goToLogin();
+            return;
+        }
+
+        settings.digits = AppSettings.getDigits(this);
+        settings.period = AppSettings.getPeriod(this);
+        settings.algo = AppSettings.getAlgo(this);
 
         binding = ActivityEnrollBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         applySystemBarPadding(binding.enrollRoot);
+        // The text and the length limit depend on the chosen number of digits
+        binding.textConfirmPrompt.setText(getString(R.string.enroll_confirm_prompt, settings.digits));
+        binding.layoutCode.setHint(getString(R.string.hint_code, settings.digits));
+        binding.inputCode.setFilters(new android.text.InputFilter[]{
+                new android.text.InputFilter.LengthFilter(settings.digits)});
 
         DbHelper db = DbHelper.getInstance(this);
         userDao = new UserDao(db);
@@ -231,7 +258,7 @@ public class EnrollActivity extends BaseActivity {
     private void onConfirmClicked() {
         String code = String.valueOf(binding.inputCode.getText()).trim();
         if (!code.matches("\\d{" + settings.digits + "}")) {
-            binding.layoutCode.setError(getString(R.string.error_code_length));
+            binding.layoutCode.setError(getString(R.string.error_code_length, settings.digits));
             return;
         }
 

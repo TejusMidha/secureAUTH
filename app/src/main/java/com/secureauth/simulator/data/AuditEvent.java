@@ -30,6 +30,8 @@ public final class AuditEvent {
     public static final String DEVICE_RENAMED = "DEVICE_RENAMED";
     public static final String DEVICE_REVOKED = "DEVICE_REVOKED";
 
+    public static final String AUTO_LOCK = "AUTO_LOCK";
+
     public static final String RESULT_SUCCESS = "SUCCESS";
     public static final String RESULT_FAIL = "FAIL";
     public static final String RESULT_WARNING = "WARNING";

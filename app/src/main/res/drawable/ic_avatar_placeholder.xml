@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Head and shoulders shown until the user picks a photo; colours follow the theme (dark mode too) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:fillColor="?attr/colorSecondaryContainer"
+        android:pathData="M0,0h120v120h-120z" />
+    <path
+        android:fillColor="?attr/colorOnSecondaryContainer"
+        android:pathData="M60,28a20,20 0,1 1,0 40a20,20 0,1 1,0 -40z" />
+    <path
+        android:fillColor="?attr/colorOnSecondaryContainer"
+        android:pathData="M20,120c0,-22 18,-40 40,-40s40,18 40,40z" />
+</vector>

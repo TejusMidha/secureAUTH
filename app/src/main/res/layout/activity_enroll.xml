@@ -81,19 +81,19 @@
             android:orientation="vertical"
             android:visibility="gone">
 
+            <!-- The text names the number of digits chosen in Settings, so EnrollActivity fills it in -->
             <TextView
+                android:id="@+id/text_confirm_prompt"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="@string/enroll_confirm_prompt"
                 android:textAppearance="@style/TextAppearance.SecureAuth.Body" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/layout_code"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_code">
+                android:layout_height="wrap_content">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/input_code"
@@ -101,7 +101,6 @@
                     android:layout_height="wrap_content"
                     android:imeOptions="actionDone"
                     android:inputType="number"
-                    android:maxLength="6"
                     android:singleLine="true" />
             </com.google.android.material.textfield.TextInputLayout>
 

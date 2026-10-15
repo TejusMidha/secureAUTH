@@ -13,6 +13,7 @@ import static androidx.test.espresso.matcher.ViewMatchers.withText;
 import static com.secureauth.simulator.ui.TestUtils.textOf;
 import static com.secureauth.simulator.ui.TestUtils.waitUntilDisplayed;
 import static org.junit.Assert.assertArrayEquals;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -90,6 +91,7 @@ public class EnrollFlowTest {
     // ---- helpers ----------------------------------------------------------------------------
 
     private ActivityScenario<EnrollActivity> launchEnroll() {
+        TestUtils.justRegistered(userId); // enrollment opens right after registering
         Intent intent = new Intent(context, EnrollActivity.class)
                 .putExtra(EnrollActivity.EXTRA_USER_ID, userId);
         return ActivityScenario.launch(intent);
@@ -165,6 +167,39 @@ public class EnrollFlowTest {
     // ---- tests ------------------------------------------------------------------------------
 
     @Test
+    public void enrollmentFollowsTheChoicesMadeInSettings() throws Exception {
+        java.util.Map<String, Object> savedSettings = TestUtils.snapshotSettings(context);
+        com.secureauth.simulator.data.AppSettings.setDigits(context, 8);
+        com.secureauth.simulator.data.AppSettings.setPeriod(context, 60);
+        com.secureauth.simulator.data.AppSettings.setAlgo(context, TotpEngine.ALGO_SHA256);
+        try (ActivityScenario<EnrollActivity> scenario = launchEnroll()) {
+            String uri = decodeDisplayedQr(scenario);
+            assertTrue(uri, uri.contains("digits=8"));
+            assertTrue(uri, uri.contains("period=60"));
+            assertTrue(uri, uri.contains("algorithm=SHA256"));
+
+            onView(withId(R.id.button_scanned)).perform(scrollTo(), click());
+            onView(withId(R.id.text_confirm_prompt)).check(matches(withText(containsString("8-digit"))));
+
+            // A 6-digit answer is refused, and the message names the right length
+            typeCodeAndConfirm("123456");
+            onView(withText(context.getString(R.string.error_code_length, 8))).check(matches(isDisplayed()));
+
+            byte[] secret = shownSecret();
+            typeCodeAndConfirm(TotpEngine.generate(secret, System.currentTimeMillis(), 8, 60,
+                    TotpEngine.ALGO_SHA256));
+            waitUntilClosed(scenario);
+
+            TotpAccount saved = accounts.listForUser(userId).get(0);
+            assertEquals(8, saved.digits);
+            assertEquals(60, saved.period);
+            assertEquals(TotpEngine.ALGO_SHA256, saved.algo);
+        } finally {
+            TestUtils.restoreSettings(context, savedSettings);
+        }
+    }
+
+    @Test
     public void secretIsShownInGroupsOfFour() {
         try (ActivityScenario<EnrollActivity> ignored = launchEnroll()) {
             String shown = textOf(R.id.text_secret);
@@ -215,7 +250,7 @@ public class EnrollFlowTest {
         try (ActivityScenario<EnrollActivity> ignored = launchEnroll()) {
             onView(withId(R.id.button_scanned)).perform(scrollTo(), click());
             typeCodeAndConfirm("123");
-            onView(withText(R.string.error_code_length)).check(matches(isDisplayed()));
+            onView(withText(context.getString(R.string.error_code_length, 6))).check(matches(isDisplayed()));
             assertEquals(0, countEvents(AuditEvent.ENROLL_VERIFY_FAIL));
         }
     }

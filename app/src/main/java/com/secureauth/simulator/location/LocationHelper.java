@@ -16,6 +16,7 @@ import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
 import com.google.android.gms.tasks.CancellationTokenSource;
+import com.secureauth.simulator.data.AppSettings;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -44,9 +45,8 @@ public class LocationHelper {
     /** Give up after this long so a slow GPS never holds up a login. */
     private static final long TIMEOUT_MS = 8_000;
 
-    // Same preferences file the Settings screen (Phase 14) will write to
-    private static final String PREFS_NAME = "secureauth_prefs";
-    private static final String PREF_RECORD_LOCATION = "record_location";
+    // The "Record login location" setting itself lives in AppSettings; this file only remembers
+    // that the explanation dialog has been shown
     private static final String PREF_ASKED = "location_asked";
 
     private static final double EARTH_RADIUS_KM = 6371.0088;
@@ -58,12 +58,12 @@ public class LocationHelper {
     }
 
     private SharedPreferences prefs() {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     /** The "Record login location" setting. On by default. */
     public boolean isRecordingEnabled() {
-        return prefs().getBoolean(PREF_RECORD_LOCATION, true);
+        return AppSettings.isRecordLocation(context);
     }
 
     /** True if the user has allowed approximate or precise location. */

@@ -91,8 +91,10 @@ public class BiometricGateFlowTest {
     // ---- helpers ----------------------------------------------------------------------------
 
     private ActivityScenario<BiometricGateActivity> launchGate() {
+        TestUtils.passCodeStep(userId); // steps 1 and 2 come first in the real flow
         return ActivityScenario.launch(new Intent(context, BiometricGateActivity.class)
-                .putExtra(BiometricGateActivity.EXTRA_USER_ID, userId));
+                .putExtra(BiometricGateActivity.EXTRA_USER_ID, userId)
+                .putExtra(BiometricGateActivity.EXTRA_SHOW_PROMPT, false)); // keep the system prompt out of the way
     }
 
     private int countEvents(String event) {

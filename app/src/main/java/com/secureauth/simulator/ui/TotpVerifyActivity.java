@@ -16,6 +16,7 @@ import com.secureauth.simulator.data.AuditLogDao;
 import com.secureauth.simulator.data.DbHelper;
 import com.secureauth.simulator.data.DeviceTrust;
 import com.secureauth.simulator.data.LockoutManager;
+import com.secureauth.simulator.data.LoginHandshake;
 import com.secureauth.simulator.data.TotpAccount;
 import com.secureauth.simulator.data.TotpAccountDao;
 import com.secureauth.simulator.data.TrustedDeviceDao;
@@ -111,6 +112,11 @@ public class TotpVerifyActivity extends BaseActivity {
         userId = getIntent().getLongExtra(EXTRA_USER_ID, -1L);
         if (userId < 0) {
             finish();
+            return;
+        }
+        // The user id arrives in an Intent, which proves nothing. Step 1 must really have passed.
+        if (!LoginHandshake.getInstance().allowsCodeStep(userId, System.currentTimeMillis())) {
+            goToLogin();
             return;
         }
 
@@ -245,6 +251,11 @@ public class TotpVerifyActivity extends BaseActivity {
 
     /** Step 3 of the handshake (explicit Intent). This screen is finished, so Back cannot return here. */
     private void goToBiometricGate() {
+        // Record that step 2 is done (this only works right after step 1 for the same user)
+        if (!LoginHandshake.getInstance().codeAccepted(userId, System.currentTimeMillis())) {
+            goToLogin(); // the password step went stale while the code was being entered: start over
+            return;
+        }
         startActivity(new Intent(this, BiometricGateActivity.class)
                 .putExtra(BiometricGateActivity.EXTRA_USER_ID, userId));
         finish();
